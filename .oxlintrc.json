@@ -1,0 +1,54 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "plugins": ["eslint", "typescript", "react", "unicorn", "oxc", "import", "jsx-a11y", "promise"],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/immutability": "error",
+    "react/memo-dependencies": "error",
+    "react/refs": "error",
+    "react-hooks/exhaustive-deps": "error",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/consistent-return": "error",
+    "unicorn/prefer-add-event-listener": "error",
+    "unicorn/no-array-sort": "error",
+    "unicorn/consistent-function-scoping": "error",
+    "unicorn/prefer-set-has": "error",
+    "unicorn/no-useless-fallback-in-spread": "error",
+    "unicorn/no-useless-spread": "error",
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": ["**/*.css"]
+      }
+    ],
+    "import/no-named-as-default-member": "error",
+    "oxc/no-map-spread": "off",
+    "eslint/no-underscore-dangle": "error",
+    "local/no-inline-types": "error",
+    "unicorn/filename-case": [
+      "error",
+      {
+        "case": "kebabCase"
+      }
+    ]
+  },
+  "options": {
+    "typeAware": true,
+    "maxWarnings": 0,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "ignorePatterns": [
+    "worker-configuration.d.ts",
+    "public/mcp-view.html",
+    "public/mcp-workspace.html"
+  ],
+  "jsPlugins": ["./lint/types-plugin.ts"]
+}

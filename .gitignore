@@ -1,0 +1,12 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+public/mcp-view.html
+public/mcp-workspace.html
+
+# Cloudflare CLI build output and generated types
+.cloudflare/
+
+# TypeScript project-reference build cache
+*.tsbuildinfo

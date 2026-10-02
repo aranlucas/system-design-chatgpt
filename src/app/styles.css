@@ -1,0 +1,304 @@
+:root {
+  --bg: #f8f9fa;
+  --card: #ffffff;
+  --fg: #1e1e1e;
+  --muted: #6c757d;
+  --border: #dee2e6;
+  --accent: #6741d9;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  color: var(--fg);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --card: #1e1e1e;
+    --fg: #e9ecef;
+    --muted: #adb5bd;
+    --border: #343a40;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+.home {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 16px;
+}
+.home h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 16px;
+}
+.card h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.row input,
+.row select {
+  flex: 1;
+  min-width: 140px;
+}
+/* Form styling for our own pages/panels only; unscoped it leaked onto
+   Excalidraw's inputs and buttons. */
+:is(.home, .sd-panel) :is(input, select, button) {
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+}
+:is(.home, .sd-panel) button {
+  cursor: pointer;
+}
+:is(.home, .sd-panel) button:hover {
+  border-color: var(--accent);
+}
+:is(.home, .sd-panel) button.link {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 2px 6px;
+}
+.cmd {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.list li:first-child {
+  border-top: none;
+}
+.list li > :first-child {
+  flex: 1;
+}
+.list a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.canvas-wrap {
+  position: fixed;
+  inset: 0;
+}
+
+/* Canvas chrome is Excalidraw's own: LiveCollaborationTrigger, Sidebar.Trigger,
+   DefaultSidebar tabs (Share, Versions), WelcomeScreen, and api.setToast.
+   Inside .excalidraw, the page tokens below resolve to Excalidraw's, so the
+   shared classes (.row, .cmd, .list, .tag, .muted) follow its light/dark theme. */
+.canvas-wrap .excalidraw {
+  --bg: var(--color-surface-low);
+  --card: var(--input-bg-color);
+  --fg: var(--text-primary-color);
+  --muted: var(--color-gray-50);
+  --border: var(--input-border-color);
+  --accent: var(--color-primary);
+}
+/* Excalidraw's toast sits 10px from the bottom, over the footer; lift it clear. */
+.canvas-wrap .excalidraw .Toast {
+  bottom: calc(var(--lg-button-size) + 1.75rem);
+}
+/* Excalidraw ships no style for a highlighted menu item; excalidraw.com adds
+   this in its own app to make the Command palette item stand out. */
+.canvas-wrap .excalidraw .dropdown-menu-item.highlighted {
+  color: var(--color-promo);
+  font-weight: 700;
+}
+.canvas-wrap .excalidraw .dropdown-menu-item.highlighted .dropdown-menu-item__icon g {
+  stroke-width: 2;
+}
+/* FooterCenter has no leading margin; match .undo-redo-buttons' 0.6em. */
+.footbar {
+  display: flex;
+  gap: 0.6em;
+  min-width: 0;
+  margin-inline-start: 0.6em;
+}
+.footbar .title .sidebar-trigger__label {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: normal;
+  font-weight: 600;
+}
+.sd-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 0.75rem 1rem;
+  overflow: auto;
+  color: var(--text-primary-color);
+  font-size: 0.875rem;
+}
+.sd-panel h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.sd-panel p {
+  margin: 4px 0 0;
+}
+.sd-panel label {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.sd-panel .snaps li {
+  align-items: flex-start;
+}
+.sd-panel .snap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sd-panel .snap-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+.sd-panel .snaps button {
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+.sd-panel button {
+  border: none;
+  background: var(--color-surface-low);
+  box-shadow: 0 0 0 1px var(--color-surface-lowest);
+}
+.sd-panel button:hover {
+  background: var(--button-hover-bg);
+}
+.sd-panel a {
+  color: var(--link-color);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #adb5bd;
+}
+.dot.live {
+  background: #2f9e44;
+}
+.dot.offline {
+  background: #e03131;
+}
+.snaps li {
+  font-size: 13px;
+}
+.tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.tag.named {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.copy-label {
+  width: 92px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.card .row + .row {
+  margin-top: 8px;
+}
+
+.agent-heart {
+  position: fixed;
+  z-index: 1000;
+  width: 120px;
+  height: 120px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.agent-heart svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.agent-heart path {
+  fill: none;
+  stroke: #e03131;
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 5px #e0313188);
+  stroke-dasharray: 1;
+  animation: draw-heart 2.4s ease-out forwards;
+}
+@keyframes draw-heart {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  65% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-heart path {
+    animation: none;
+  }
+}

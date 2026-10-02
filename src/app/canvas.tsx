@@ -1,0 +1,1067 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getJson } from "./queries.ts";
+import {
+  CaptureUpdateAction,
+  CommandPalette,
+  convertToExcalidrawElements,
+  DefaultSidebar,
+  Excalidraw,
+  exportToBlob,
+  Footer,
+  getCommonBounds,
+  isInvisiblySmallElement,
+  LiveCollaborationTrigger,
+  MainMenu,
+  newElementWith,
+  Sidebar,
+  reconcileElements,
+  restoreElements,
+  WelcomeScreen,
+} from "@excalidraw/excalidraw";
+import "@excalidraw/excalidraw/index.css";
+import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  Collaborator,
+  DataURL,
+  ExcalidrawImperativeAPI,
+  SocketId,
+} from "@excalidraw/excalidraw/types";
+import useWebSocket from "partysocket/use-ws";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  AGENT_STROKE,
+  type ClientMessage,
+  type El,
+  type FocusViewParams,
+  type MermaidParams,
+  type ScreenshotParams,
+  type ServerMessage,
+} from "../shared/protocol.ts";
+import { apiErrorMessage, type ApiFailure } from "./api-error.ts";
+import { CopyRow } from "./copy-row.tsx";
+import { embeddedHostOrigin, isEmbeddedHostMessage } from "../shared/embedded-canvas.ts";
+import { displayName, linkFor, remember, setDisplayName, setupCommands } from "./local.ts";
+
+interface CanvasProps {
+  id: string;
+  k: string;
+}
+
+/** The heart gesture being drawn: where, and when it started (it fades out). */
+type Heart = { x: number; y: number; startedAt: number };
+type RpcMessage = Extract<ServerMessage, { type: "rpc" }>;
+type RenameResult = { name: string } & ApiFailure;
+
+interface SharePanelProps {
+  link: string;
+  copy: (text: string, what: string) => void;
+  onName: () => void;
+}
+
+interface RenamePanelProps {
+  name: string;
+  id: string;
+  diagramKey: string;
+  onRenamed: (name: string) => void;
+}
+
+interface VersionsPanelProps {
+  id: string;
+  k: string;
+  flash: (m: string) => void;
+}
+
+interface Snapshot {
+  id: string;
+  name: string;
+  kind: "auto" | "named";
+  createdAt: number;
+  elements: number;
+}
+
+/** Collaborator id for the agent's transient cursor and selection outline. */
+const AGENT = "agent" as SocketId;
+
+const icon = (d: string) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d={d} />
+  </svg>
+);
+const historyIcon = icon("M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 3");
+const shareIcon = icon(
+  "M18 8a3 3 0 1 0-3-3M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm12 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
+);
+const libraryIcon = icon("M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z");
+
+const blobToBase64 = (b: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.addEventListener("load", () => {
+      if (typeof r.result === "string") resolve(r.result.split(",")[1]);
+      else reject(new Error("Expected a data URL from FileReader"));
+    });
+    r.addEventListener("error", () => reject(r.error));
+    r.readAsDataURL(b);
+  });
+
+export function Canvas({ id, k }: CanvasProps) {
+  const embeddedOrigin = embeddedHostOrigin(location.search);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [name, setName] = useState("…");
+  const [peers, setPeers] = useState(1);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (loaded) document.title = `${name} · System Design`;
+  }, [loaded, name]);
+  // The heart has no Excalidraw equivalent; the plain "point" gesture is drawn as the
+  // agent's collaborator cursor instead.
+  const [heart, setHeart] = useState<Heart | null>(null);
+  const gestureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (gestureTimer.current) clearTimeout(gestureTimer.current);
+    },
+    [],
+  );
+
+  const synced = useRef(new Map<string, number>()); // element id → last version exchanged with the room
+  const pendingSend = useRef<number | null>(null);
+  const uploadedFiles = useRef(new Set<string>()); // file ids the room already has
+  const libraryRequested = useRef(false);
+  const fetchingFiles = useRef(new Set<string>());
+  const lastPresence = useRef("");
+  const lastPointer = useRef(0);
+  const offline = useRef(false);
+  const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/${id}?k=${encodeURIComponent(k)}`;
+  const collaborators = useRef(new Map<SocketId, Collaborator>());
+  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const ws = useRef<ReturnType<typeof useWebSocket> | null>(null);
+  // Publish committed handles before the socket's effects can deliver events.
+  useLayoutEffect(() => {
+    apiRef.current = api;
+    (window as any).excalidrawAPI = api; // handy for debugging from the console
+    return () => {
+      apiRef.current = null;
+      (window as any).excalidrawAPI = null;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (!embeddedOrigin || !api) return undefined;
+    const receiveTheme = (event: MessageEvent<unknown>) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== embeddedOrigin ||
+        !isEmbeddedHostMessage(event.data)
+      )
+        return;
+      api.updateScene({ appState: { theme: event.data.theme } });
+    };
+    window.addEventListener("message", receiveTheme);
+    window.parent.postMessage({ type: "system-design.ready" }, embeddedOrigin);
+    return () => window.removeEventListener("message", receiveTheme);
+  }, [api, embeddedOrigin]);
+
+  const openAllDiagrams = () => {
+    if (embeddedOrigin)
+      window.parent.postMessage({ type: "system-design.library" }, embeddedOrigin);
+    else location.assign("/");
+  };
+  const attachSelection = () => {
+    const current = apiRef.current;
+    if (!embeddedOrigin || !current) return;
+    const selectedElementIds = Object.keys(current.getAppState().selectedElementIds).filter(
+      (elementId) => current.getAppState().selectedElementIds[elementId],
+    );
+    window.parent.postMessage(
+      { type: "system-design.context", selectedElementIds },
+      embeddedOrigin,
+    );
+  };
+
+  const flash = (message: string) => apiRef.current?.setToast({ message, duration: 2500 });
+  const loadLibrary = async () => {
+    const currentApi = apiRef.current;
+    if (!currentApi || libraryRequested.current) return;
+    libraryRequested.current = true;
+    try {
+      await currentApi.updateLibrary({
+        libraryItems: import("./library.ts").then(({ componentLibrary }) => componentLibrary()),
+        merge: true,
+        defaultStatus: "published",
+      });
+    } catch {
+      libraryRequested.current = false;
+      flash("Could not load components. Close and reopen the library to retry.");
+    }
+  };
+  // Share and Versions are tabs in Excalidraw's default sidebar, next to the library.
+  const open = (tab: "share" | "versions" | "library") =>
+    apiRef.current?.toggleSidebar({ name: "default", tab, force: true });
+  const openRename = () => apiRef.current?.toggleSidebar({ name: "rename", force: true });
+
+  /** Excalidraw draws each collaborator's cursor, selection outline and avatar. */
+  const setCollaborator = useCallback((peer: SocketId, patch: Partial<Collaborator> | null) => {
+    const map = collaborators.current;
+    if (patch) map.set(peer, { ...map.get(peer), id: peer, socketId: peer, ...patch });
+    else map.delete(peer);
+    apiRef.current?.updateScene({ collaborators: new Map(map) });
+  }, []);
+
+  const send = useCallback((m: ClientMessage) => {
+    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(m));
+  }, []);
+
+  const sendPresence = useCallback(
+    (force = false) => {
+      const a = apiRef.current;
+      if (!a) return;
+      const st = a.getAppState();
+      const selection = Object.keys(st.selectedElementIds).filter(
+        (key) => st.selectedElementIds[key],
+      );
+      const viewport = {
+        x: Math.round(-st.scrollX),
+        y: Math.round(-st.scrollY),
+        width: Math.round(st.width / st.zoom.value),
+        height: Math.round(st.height / st.zoom.value),
+        zoom: st.zoom.value,
+      };
+      const focused = document.hasFocus();
+      const username = displayName() || undefined;
+      const sig = JSON.stringify([selection, focused, username]);
+      if (!force && sig === lastPresence.current) return;
+      lastPresence.current = sig;
+      send({ type: "presence", selection, viewport, focused, username });
+    },
+    [send],
+  );
+
+  const showFocus = useCallback(
+    async (
+      targets: readonly ExcalidrawElement[],
+      mode: "focus" | "point",
+      gesture: "dot" | "heart" = "dot",
+    ) => {
+      const a = apiRef.current;
+      if (!a || !targets.length) return false;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const groups = new Set(targets.flatMap((e) => e.groupIds));
+      const ids = new Set(targets.map((e) => e.id));
+      const elements = [
+        ...targets,
+        ...a
+          .getSceneElements()
+          .filter((e) => !ids.has(e.id) && e.groupIds.some((groupId) => groups.has(groupId))),
+      ];
+      if (mode === "focus")
+        a.setViewport({ target: elements, fit: "scale-down", animation: false });
+      // Wait for the viewport change to be applied before positioning the temporary pointer.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const state = a.getAppState();
+      const [left, top, right, bottom] = getCommonBounds(elements);
+      const x = (left + right) / 2;
+      const y = (top + bottom) / 2;
+      const screen = {
+        x: (x + state.scrollX) * state.zoom.value + state.offsetLeft,
+        y: (y + state.scrollY) * state.zoom.value + state.offsetTop,
+      };
+      const visible =
+        screen.x >= state.offsetLeft &&
+        screen.x <= state.offsetLeft + state.width &&
+        screen.y >= state.offsetTop &&
+        screen.y <= state.offsetTop + state.height;
+      if (gestureTimer.current) clearTimeout(gestureTimer.current);
+      if (gesture === "heart") {
+        setHeart(visible ? { ...screen, startedAt: performance.now() } : null);
+        if (visible) gestureTimer.current = setTimeout(() => setHeart(null), 2400);
+      } else {
+        setCollaborator(AGENT, {
+          username: "Agent",
+          color: { background: AGENT_STROKE, stroke: AGENT_STROKE },
+          pointer: { x, y, tool: "pointer" },
+          selectedElementIds: Object.fromEntries(elements.map((e) => [e.id, true])),
+        });
+        gestureTimer.current = setTimeout(() => setCollaborator(AGENT, null), 2400);
+      }
+      return visible;
+    },
+    [setCollaborator],
+  );
+
+  // ---------- tab RPC (screenshot, mermaid) ----------
+
+  const handleRpc = useCallback(
+    async (msg: RpcMessage) => {
+      const a = apiRef.current;
+      try {
+        if (!a) throw new Error("canvas not ready");
+        if (msg.method === "screenshot") {
+          const { elementIds } = msg.params as ScreenshotParams;
+          let elements = a.getSceneElements();
+          if (elementIds?.length) {
+            const want = new Set(elementIds);
+            elements = elements.filter(
+              (e) =>
+                want.has(e.id) ||
+                (e.frameId && want.has(e.frameId)) ||
+                ("containerId" in e && e.containerId && want.has(e.containerId)),
+            );
+          }
+          if (!elements.length) throw new Error("nothing to render");
+          const blob = await exportToBlob({
+            elements,
+            appState: {
+              ...a.getAppState(),
+              exportBackground: true,
+              exportWithDarkMode: false,
+              viewBackgroundColor: "#ffffff",
+            },
+            files: a.getFiles(),
+            mimeType: "image/png",
+            maxWidthOrHeight: 1600,
+            exportPadding: 24,
+          });
+          send({
+            type: "rpc_result",
+            reqId: msg.reqId,
+            ok: true,
+            data: { base64: await blobToBase64(blob), mimeType: "image/png" },
+          });
+        } else if (msg.method === "focus_view") {
+          const { elementIds, mode, gesture } = msg.params as FocusViewParams;
+          const ids = new Set(elementIds);
+          const elements = a.getSceneElements().filter((e) => ids.has(e.id));
+          if (!elements.length) throw new Error("Target no longer exists in this tab");
+          const visible = await showFocus(elements, mode, gesture);
+          send({
+            type: "rpc_result",
+            reqId: msg.reqId,
+            ok: true,
+            data: { mode, visible, elementIds: elements.map((e) => e.id) },
+          });
+        } else if (msg.method === "mermaid") {
+          const { source } = msg.params as MermaidParams;
+          const { parseMermaidToExcalidraw } = await import("@excalidraw/mermaid-to-excalidraw");
+          const { elements, files } = await parseMermaidToExcalidraw(source);
+          // Diagram types Excalidraw can't draw natively come back as an image; keep its bytes
+          // here so this tab uploads them once the room adds the element.
+          if (files) apiRef.current?.addFiles(Object.values(files));
+          const converted = convertToExcalidrawElements(elements, { regenerateIds: true });
+          send({ type: "rpc_result", reqId: msg.reqId, ok: true, data: { elements: converted } });
+        }
+      } catch (e) {
+        send({ type: "rpc_result", reqId: msg.reqId, ok: false, error: (e as Error).message });
+      }
+    },
+    [send, showFocus],
+  );
+
+  // ---------- connection ----------
+
+  // partysocket reconnects with backoff; messages sent while offline are dropped (not
+  // queued) because the room re-sends a full init and flush() re-diffs on reconnect.
+  const socket = useWebSocket(wsUrl, undefined, {
+    enabled: !!api,
+    maxEnqueuedMessages: 0,
+    shouldReconnectOnClose: (event) => event.code !== 1008, // 1008: diagram deleted
+    onOpen: () => {
+      if (offline.current) api?.setToast(null);
+      offline.current = false;
+      sendPresence(true);
+    },
+    onClose: (event) => {
+      // Peers re-announce themselves on reconnect.
+      collaborators.current.clear();
+      api?.updateScene({ collaborators: new Map() });
+      if (event.code === 1008 || offline.current) return;
+      offline.current = true;
+      api?.setToast({ message: "Offline, reconnecting…", duration: Infinity });
+    },
+    onMessage: (ev) => {
+      if (!api) return;
+      const msg = JSON.parse(ev.data) as ServerMessage;
+      if (msg.type === "init") {
+        setName(msg.name);
+        remember({ id, key: k, name: msg.name });
+        const remote = restoreElements(msg.elements as any, null);
+        const local = api.getSceneElementsIncludingDeleted();
+        const merged = local.length
+          ? reconcileElements(local, remote as any, api.getAppState())
+          : remote;
+        for (const e of msg.elements) synced.current.set(e.id, e.version);
+        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
+        fetchFiles();
+        // Fitting an empty board would zoom to Excalidraw's 3000% maximum.
+        if (!local.length && msg.elements.some((e) => !e.isDeleted))
+          api.setViewport({
+            target: api.getSceneElements(),
+            fit: "contain",
+            animation: false,
+            offsets: { ui: { padding: 48 } },
+          });
+        setLoaded(true);
+        // Push anything drawn while offline.
+        scheduleSend();
+      } else if (msg.type === "rename") {
+        setName(msg.name);
+        remember({ id, key: k, name: msg.name });
+      } else if (msg.type === "update") {
+        // Like init: agent-built elements may lack fields Excalidraw fills in on restore.
+        const merged = reconcileElements(
+          api.getSceneElementsIncludingDeleted(),
+          restoreElements(msg.elements as any, null) as any,
+          api.getAppState(),
+        );
+        for (const e of msg.elements)
+          synced.current.set(e.id, Math.max(e.version, synced.current.get(e.id) ?? 0));
+        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
+        fetchFiles();
+        if (msg.origin === "agent") {
+          flash(
+            `Agent updated ${msg.elements.length} element${msg.elements.length === 1 ? "" : "s"}`,
+          );
+          const changedIds = new Set(msg.elements.map((e) => e.id));
+          const changed = merged.filter(
+            (e) =>
+              changedIds.has(e.id) &&
+              !e.isDeleted &&
+              !e.customData?.componentPart &&
+              !e.customData?.componentLabel,
+          );
+          const components = changed.filter(
+            (e) =>
+              !["frame", "arrow", "line"].includes(e.type) && !(e.type === "text" && e.containerId),
+          );
+          // Prefer actual components over an enlarged frame or a rerouted long connection.
+          const targets = components.length ? components : changed;
+          const removed = msg.elements.filter(
+            (e) =>
+              e.isDeleted &&
+              !e.customData?.componentPart &&
+              !e.customData?.componentLabel &&
+              e.type !== "text",
+          );
+          void showFocus(
+            targets.length
+              ? targets
+              : (removed.map((e) => ({ ...e, isDeleted: false })) as ExcalidrawElement[]),
+            "focus",
+          );
+        }
+      } else if (msg.type === "rpc") {
+        void handleRpc(msg);
+      } else if (msg.type === "peers") {
+        setPeers(msg.count);
+      } else if (msg.type === "collaborator") {
+        const { id: peer, selection, username, pointer, button } = msg;
+        setCollaborator(peer as SocketId, {
+          ...(selection
+            ? {
+                username,
+                selectedElementIds: Object.fromEntries(selection.map((e) => [e, true])),
+              }
+            : {}),
+          ...(pointer ? { pointer, button } : {}),
+        });
+      } else if (msg.type === "collaborator_left") {
+        setCollaborator(msg.id as SocketId, null);
+      }
+    },
+  });
+  useLayoutEffect(() => {
+    ws.current = socket;
+    return () => {
+      ws.current = null;
+    };
+  }, [socket]);
+
+  // ---------- local changes → room ----------
+
+  const flush = () => {
+    pendingSend.current = null;
+    const a = apiRef.current;
+    if (!a || ws.current?.readyState !== WebSocket.OPEN) return;
+    uploadFiles();
+    const changed: El[] = [];
+    for (const e of a.getSceneElementsIncludingDeleted()) {
+      // A click with a drawing tool leaves a zero-size element; send it once it has a size.
+      if (!e.isDeleted && isInvisiblySmallElement(e)) continue;
+      if (e.version > (synced.current.get(e.id) ?? 0)) {
+        changed.push(e);
+        synced.current.set(e.id, e.version);
+      }
+    }
+    if (changed.length) send({ type: "update", elements: changed });
+  };
+
+  // ---------- image files ----------
+  // Elements only carry a fileId; the bytes go through R2 (/api/d/:id/files/:fileId).
+  // As in excalidraw.com, the tab that has the bytes uploads them and then marks the element
+  // "saved", which syncs like any edit and tells the other tabs the file is ready to fetch.
+
+  const fileUrl = (fileId: string) =>
+    `/api/d/${id}/files/${encodeURIComponent(fileId)}?k=${encodeURIComponent(k)}`;
+
+  const setImageStatus = (fileId: string, status: "saved" | "error") => {
+    const a = apiRef.current;
+    if (!a) return;
+    const els = a.getSceneElementsIncludingDeleted();
+    const stale = (e: ExcalidrawElement) =>
+      e.type === "image" && e.fileId === fileId && e.status !== status;
+    if (!els.some(stale)) return;
+    a.updateScene({
+      elements: els.map((e) => (stale(e) ? newElementWith(e as any, { status }) : e)),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  };
+
+  const uploadFiles = () => {
+    const a = apiRef.current;
+    if (!a) return;
+    const have = a.getFiles();
+    for (const e of a.getSceneElementsIncludingDeleted()) {
+      if (e.type !== "image" || e.isDeleted || !e.fileId) continue;
+      const fileId = e.fileId;
+      const file = have[fileId];
+      if (!file || uploadedFiles.current.has(fileId)) continue;
+      uploadedFiles.current.add(fileId);
+      void (async () => {
+        try {
+          const body = await (await fetch(file.dataURL)).blob();
+          const res = await fetch(fileUrl(fileId), {
+            method: "PUT",
+            headers: { "Content-Type": file.mimeType },
+            body,
+          });
+          if (res.ok) return setImageStatus(fileId, "saved");
+          // The room refused the file (too large, not an image); retrying won't help.
+          if (res.status === 413 || res.status === 415) {
+            setImageStatus(fileId, "error");
+            flash(
+              res.status === 413
+                ? "Image is too large to share (4 MB max)"
+                : "Only images can be shared",
+            );
+            return;
+          }
+          uploadedFiles.current.delete(fileId);
+        } catch {
+          uploadedFiles.current.delete(fileId); // offline: the next flush retries
+        }
+      })();
+    }
+  };
+
+  const fetchFiles = () => {
+    const a = apiRef.current;
+    if (!a) return;
+    const have = a.getFiles();
+    const missing = new Set<string>();
+    for (const e of a.getSceneElementsIncludingDeleted())
+      if (e.type === "image" && !e.isDeleted && e.fileId && e.status === "saved" && !have[e.fileId])
+        missing.add(e.fileId);
+    for (const fileId of missing) {
+      if (fetchingFiles.current.has(fileId)) continue;
+      fetchingFiles.current.add(fileId);
+      void (async () => {
+        try {
+          const res = await fetch(fileUrl(fileId));
+          if (!res.ok) throw new Error(`file ${fileId}: ${res.status}`);
+          const blob = await res.blob();
+          const dataURL = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.addEventListener("load", () => {
+              if (typeof reader.result === "string") resolve(reader.result);
+              else reject(new Error("Expected a data URL from FileReader"));
+            });
+            reader.addEventListener("error", () => reject(reader.error));
+            reader.readAsDataURL(blob);
+          });
+          uploadedFiles.current.add(fileId);
+          apiRef.current?.addFiles([
+            {
+              id: fileId as FileId,
+              dataURL: dataURL as DataURL,
+              mimeType: blob.type as BinaryFileData["mimeType"],
+              created: Date.now(),
+            },
+          ]);
+        } catch (e) {
+          console.warn(e);
+        } finally {
+          // A failed fetch is retried on the next update from the room.
+          fetchingFiles.current.delete(fileId);
+        }
+      })();
+    }
+  };
+
+  const scheduleSend = () => {
+    if (pendingSend.current === null) pendingSend.current = window.setTimeout(flush, 60);
+  };
+
+  useEffect(() => {
+    const onFocus = () => sendPresence(true);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [sendPresence]);
+
+  // ---------- chrome ----------
+
+  const tidy = async () => {
+    // With a selection, tidy only the frames it touches (null = the top level).
+    const editor = apiRef.current;
+    const selected = editor?.getAppState().selectedElementIds ?? {};
+    const frames = [
+      ...new Set(
+        (editor?.getSceneElements() ?? [])
+          .filter((e) => selected[e.id])
+          .map((e) => (e.type === "frame" ? e.id : e.frameId)),
+      ),
+    ];
+    const r = await fetch(`/api/d/${id}/tidy?k=${encodeURIComponent(k)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ frames }),
+    });
+    const d = (await r.json()) as TidyResult;
+    const where = frames.length ? "Selection" : "Diagram";
+    flash(
+      r.ok
+        ? d.changed
+          ? `${where} tidied: ${tidySummary(d)}. Undo in Versions.`
+          : `${where} is already tidy`
+        : `Tidy failed: ${apiErrorMessage(d, "Could not tidy the diagram.")}`,
+    );
+  };
+
+  const shareLink = linkFor(id, k);
+  const copy = (text: string, what: string) => {
+    void navigator.clipboard.writeText(text);
+    flash(`${what} copied`);
+  };
+
+  return (
+    <div className="canvas-wrap">
+      {heart && (
+        <output
+          key={heart.startedAt}
+          className="agent-heart"
+          aria-label="Agent is drawing a heart"
+          style={{ left: heart.x, top: heart.y }}
+        >
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <path
+              pathLength="1"
+              d="M60 98 C48 86 15 64 15 38 C15 10 47 8 60 32 C73 8 105 10 105 38 C105 64 72 86 60 98"
+            />
+          </svg>
+        </output>
+      )}
+      <Excalidraw
+        onExcalidrawAPI={setApi}
+        name={name}
+        isCollaborating={peers > 1}
+        UIOptions={{
+          // The room is the source of truth; loading or clearing a local file would bypass it.
+          canvasActions: { loadScene: false, saveToActiveFile: false, clearCanvas: false },
+        }}
+        onChange={() => {
+          scheduleSend();
+          sendPresence();
+        }}
+        onPointerDown={() => sendPresence()}
+        onPointerUpdate={({ pointer, button }) => {
+          const now = performance.now();
+          if (now - lastPointer.current < 40) return;
+          lastPointer.current = now;
+          send({
+            type: "pointer",
+            pointer: { x: pointer.x, y: pointer.y, tool: pointer.tool },
+            button,
+          });
+        }}
+        renderTopRightUI={() => (
+          <LiveCollaborationTrigger isCollaborating={peers > 1} onSelect={() => open("share")} />
+        )}
+      >
+        <MainMenu>
+          <MainMenu.Group title={name}>
+            <MainMenu.Item onSelect={openRename}>Rename diagram</MainMenu.Item>
+            <MainMenu.Item onSelect={tidy}>Tidy layout</MainMenu.Item>
+            <MainMenu.Item onSelect={() => open("versions")}>Versions</MainMenu.Item>
+            <MainMenu.Item onSelect={() => open("share")}>Share &amp; connect agent</MainMenu.Item>
+            {embeddedOrigin && (
+              <MainMenu.Item onSelect={attachSelection}>Use selection in chat</MainMenu.Item>
+            )}
+            {embeddedOrigin ? (
+              <MainMenu.Item onSelect={openAllDiagrams}>All diagrams</MainMenu.Item>
+            ) : (
+              <MainMenu.ItemLink href="/">All diagrams</MainMenu.ItemLink>
+            )}
+          </MainMenu.Group>
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.CommandPalette className="highlighted" />
+          <MainMenu.DefaultItems.SaveAsImage />
+          <MainMenu.DefaultItems.Export />
+          <MainMenu.DefaultItems.SearchMenu />
+          <MainMenu.DefaultItems.Help />
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.ToggleTheme allowSystemTheme={false} />
+          <MainMenu.DefaultItems.ChangeCanvasBackground />
+        </MainMenu>
+        {/* Excalidraw doesn't mount the palette itself; the menu item and Cmd+/ only open it. */}
+        <CommandPalette
+          customCommandPaletteItems={[
+            { label: "Rename diagram", category: "App", perform: openRename },
+            {
+              label: "Tidy layout",
+              category: "App",
+              keywords: ["overlap", "align"],
+              perform: tidy,
+            },
+            {
+              label: "Versions",
+              category: "App",
+              icon: historyIcon,
+              keywords: ["history", "restore", "undo"],
+              perform: () => open("versions"),
+            },
+            {
+              label: "Share & connect agent",
+              category: "App",
+              icon: shareIcon,
+              keywords: ["link", "mcp", "invite"],
+              perform: () => open("share"),
+            },
+            {
+              label: "Component library",
+              category: "Library",
+              icon: libraryIcon,
+              perform: () => open("library"),
+            },
+            { label: "All diagrams", category: "Links", perform: openAllDiagrams },
+          ]}
+        />
+        {/* Mounted after the room's first sync so it never flashes over a non-empty board. */}
+        {loaded && (
+          <WelcomeScreen>
+            <WelcomeScreen.Hints.MenuHint />
+            <WelcomeScreen.Hints.ToolbarHint />
+            <WelcomeScreen.Hints.HelpHint />
+            <WelcomeScreen.Center>
+              <WelcomeScreen.Center.Logo>
+                <img src="/icons/system-design-128.png" alt="" width="64" height="64" />
+              </WelcomeScreen.Center.Logo>
+              <WelcomeScreen.Center.Heading>
+                Sketch your system, or ask your agent to.
+              </WelcomeScreen.Center.Heading>
+              <WelcomeScreen.Center.Menu>
+                <WelcomeScreen.Center.MenuItem icon={shareIcon} onSelect={() => open("share")}>
+                  Connect your agent
+                </WelcomeScreen.Center.MenuItem>
+                <WelcomeScreen.Center.MenuItem icon={libraryIcon} onSelect={() => open("library")}>
+                  Component library
+                </WelcomeScreen.Center.MenuItem>
+                {embeddedOrigin ? (
+                  <WelcomeScreen.Center.MenuItem onSelect={openAllDiagrams}>
+                    All diagrams
+                  </WelcomeScreen.Center.MenuItem>
+                ) : (
+                  <WelcomeScreen.Center.MenuItemLink href="/">
+                    All diagrams
+                  </WelcomeScreen.Center.MenuItemLink>
+                )}
+                <WelcomeScreen.Center.MenuItemHelp />
+              </WelcomeScreen.Center.Menu>
+            </WelcomeScreen.Center>
+          </WelcomeScreen>
+        )}
+        {/* Excalidraw only renders <Footer> on desktop; the menu above covers mobile. */}
+        <Footer>
+          <div className="footbar">
+            <Sidebar.Trigger name="rename" title="Rename diagram" className="title">
+              {name} ✎
+            </Sidebar.Trigger>
+            <button
+              className="sidebar-trigger"
+              onClick={tidy}
+              title="Fix overlaps, alignment and frames; only the selected frames when something is selected (undo via Versions)"
+            >
+              Tidy
+            </button>
+            <Sidebar.Trigger name="default" tab="versions" title="Versions">
+              Versions
+            </Sidebar.Trigger>
+          </div>
+        </Footer>
+        <Sidebar name="rename">
+          <Sidebar.Header>Rename diagram</Sidebar.Header>
+          <RenamePanel
+            name={name}
+            id={id}
+            diagramKey={k}
+            onRenamed={(newName) => {
+              setName(newName);
+              remember({ id, key: k, name: newName });
+              api?.toggleSidebar({ name: "rename", force: false });
+              flash("Diagram renamed");
+            }}
+          />
+        </Sidebar>
+        <DefaultSidebar
+          onStateChange={(state) => {
+            if (state && (state.tab ?? "library") === "library") void loadLibrary();
+          }}
+        >
+          <DefaultSidebar.TabTriggers>
+            <Sidebar.TabTrigger tab="versions" title="Versions">
+              {historyIcon}
+            </Sidebar.TabTrigger>
+            <Sidebar.TabTrigger tab="share" title="Share & connect">
+              {shareIcon}
+            </Sidebar.TabTrigger>
+          </DefaultSidebar.TabTriggers>
+          <Sidebar.Tab tab="versions">
+            <VersionsPanel id={id} k={k} flash={flash} />
+          </Sidebar.Tab>
+          <Sidebar.Tab tab="share">
+            <SharePanel link={shareLink} copy={copy} onName={() => sendPresence(true)} />
+          </Sidebar.Tab>
+        </DefaultSidebar>
+      </Excalidraw>
+    </div>
+  );
+}
+
+function SharePanel({ link, copy, onName }: SharePanelProps) {
+  const [me, setMe] = useState(displayName);
+  return (
+    <div className="sd-panel">
+      <h3>Share &amp; connect</h3>
+      <p className="muted">Edit link: anyone with it can edit (give it to your interviewer).</p>
+      <div className="row">
+        <code className="cmd">{link}</code>
+        <button onClick={() => copy(link, "Link")}>Copy</button>
+      </div>
+      <label htmlFor="display-name">Your name (shown on your cursor)</label>
+      <input
+        id="display-name"
+        value={me}
+        maxLength={40}
+        placeholder="e.g. Interviewer"
+        onChange={(event) => {
+          setMe(event.target.value);
+          setDisplayName(event.target.value);
+          onName();
+        }}
+      />
+      <p className="muted">Agent, one-time setup:</p>
+      {setupCommands().map(({ client, cmd }) => (
+        <CopyRow key={client} label={client} text={cmd} />
+      ))}
+      <p className="muted">Then tell the agent:</p>
+      <div className="row">
+        <code className="cmd">join {link}</code>
+        <button onClick={() => copy(`Join my system design canvas: ${link}`, "Prompt")}>
+          Copy
+        </button>
+      </div>
+      <p className="muted">
+        <a href="/">All diagrams →</a>
+      </p>
+    </div>
+  );
+}
+
+function RenamePanel({ name, id, diagramKey, onRenamed }: RenamePanelProps) {
+  const [draft, setDraft] = useState(name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const input = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  return (
+    <form
+      className="sd-panel"
+      aria-label="Rename diagram"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!draft.trim() || busy) return;
+        setBusy(true);
+        setError("");
+        try {
+          const response = await fetch(`/api/d/${id}/rename?k=${encodeURIComponent(diagramKey)}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: draft.trim() }),
+          });
+          const result = (await response.json()) as RenameResult;
+          if (!response.ok)
+            throw new Error(apiErrorMessage(result, "Could not rename the diagram."));
+          onRenamed(result.name);
+        } catch (err) {
+          setError((err as Error).message);
+          setBusy(false);
+        }
+      }}
+    >
+      <label htmlFor="diagram-name">Diagram name</label>
+      <input
+        ref={input}
+        id="diagram-name"
+        value={draft}
+        maxLength={120}
+        required
+        disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      {error && <p aria-live="polite">{error}</p>}
+      <button type="submit" disabled={busy || !draft.trim()}>
+        {busy ? "Saving…" : "Save name"}
+      </button>
+    </form>
+  );
+}
+
+type TidyResult = { changed?: number } & ApiFailure &
+  Partial<Record<keyof typeof TIDY_WORDS, number>>;
+
+const TIDY_WORDS = {
+  aligned: "aligned",
+  spaced: "spaced",
+  separated: "separated",
+  adopted: "moved into frames",
+  wrapped: "notes wrapped",
+  bound: "arrow ends attached",
+  rerouted: "arrows rerouted",
+  framesFitted: "frames fitted",
+  framesMoved: "frames moved",
+};
+
+/** "3 aligned · 2 separated · 1 frames moved", from the stats the server returns. */
+function tidySummary(d: TidyResult) {
+  const parts = Object.entries(TIDY_WORDS)
+    .filter(([key]) => d[key as keyof typeof TIDY_WORDS])
+    .map(([key, word]) => `${d[key as keyof typeof TIDY_WORDS]} ${word}`);
+  return parts.join(" · ") || `${d.changed} changes`;
+}
+
+type VersionChange = { path: string; body: unknown };
+
+function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
+  const queryClient = useQueryClient();
+  const [label, setLabel] = useState("");
+  const q = `?k=${encodeURIComponent(k)}`;
+  const queryKey = ["snapshots", id, k];
+  const snapshots = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => getJson<Snapshot[]>(`/api/d/${id}/snapshots${q}`, signal),
+  });
+  const snaps = snapshots.data;
+  const mutation = useMutation({
+    mutationFn: async ({ path, body }: VersionChange) => {
+      const response = await fetch(`/api/d/${id}${path}${q}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = (await response.json()) as ApiFailure;
+      if (!response.ok) throw new Error(apiErrorMessage(result, "Could not save this change."));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onError: (error) => flash(error.message),
+  });
+  const post = async (path: string, body: unknown) => {
+    try {
+      await mutation.mutateAsync({ path, body });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return (
+    <div className="sd-panel">
+      <h3>Versions</h3>
+      <form
+        className="row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!(await post("/snapshots", { name: label || "checkpoint" }))) return;
+          setLabel("");
+          flash("Saved version");
+        }}
+      >
+        <input
+          placeholder="Name this version"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+        <button disabled={mutation.isPending}>Save</button>
+      </form>
+      <form
+        className="row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const field = e.currentTarget.elements.namedItem("tpl") as HTMLInputElement;
+          const input = field.value.trim();
+          if (!input) return;
+          if (!(await post("/template", { name: input }))) return;
+          flash("Saved as template");
+          field.value = "";
+        }}
+      >
+        <input name="tpl" placeholder="Save as template…" />
+        <button disabled={mutation.isPending}>Save</button>
+      </form>
+      <ul className="list snaps">
+        {snapshots.isLoading && <li className="muted">Loading…</li>}
+        {snapshots.error && <li role="alert">{snapshots.error.message}</li>}
+        {snaps?.length === 0 && (
+          <li className="muted">No versions yet. Claude's edits are auto-saved here first.</li>
+        )}
+        {snaps?.map((s) => (
+          <li key={s.id}>
+            <span className="snap">
+              <span className="snap-name">{s.name}</span>
+              <span className="muted">
+                <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
+                {new Date(s.createdAt).toLocaleTimeString()} · {s.elements} el
+              </span>
+            </span>
+            <button
+              disabled={mutation.isPending}
+              onClick={async () => {
+                if (!(await post("/restore", { snapshotId: s.id }))) return;
+                flash(`Restored "${s.name}"`);
+              }}
+            >
+              Restore
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
