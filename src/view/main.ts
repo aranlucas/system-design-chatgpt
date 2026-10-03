@@ -1,3 +1,5 @@
+import { sceneDataSchema } from "../shared/schemas.ts";
+import { errorMessage } from "../shared/errors.ts";
 // MCP App view shown for get_scene: a live-ish picture of the shared canvas inside the chat.
 import {
   applyDocumentTheme,
@@ -18,21 +20,49 @@ interface SceneData {
 const POLL_MS = 4000;
 
 const byId = (id: string) => document.getElementById(id)!;
+
 const title = byId("title");
+
 const status = byId("status");
-const svg = byId("scene") as unknown as SVGSVGElement;
-const refreshBtn = byId("refresh") as HTMLButtonElement;
-const openBtn = byId("open") as HTMLButtonElement;
-const fullBtn = byId("full") as HTMLButtonElement;
+
+function requireSvg(id: string): SVGSVGElement {
+  const element = document.getElementById(id);
+
+  if (!(element instanceof SVGSVGElement)) throw new Error(`Missing SVG: ${id}`);
+
+  return element;
+}
+
+function requireButton(id: string): HTMLButtonElement {
+  const element = document.getElementById(id);
+
+  if (!(element instanceof HTMLButtonElement)) throw new Error(`Missing button: ${id}`);
+
+  return element;
+}
+
+const svg = requireSvg("scene");
+
+const refreshBtn = requireButton("refresh");
+
+const openBtn = requireButton("open");
+
+const fullBtn = requireButton("full");
 
 const host = createViewHost();
 
 let diagram: string | undefined;
+
 let data: SceneData | undefined;
+
 let signature = "";
+
 let displayMode = "inline";
+
 let poll: ReturnType<typeof setInterval> | undefined;
+
 let requestVersion = 0;
+
 let pendingDiagram: string | undefined;
 
 async function load() {
@@ -41,24 +71,21 @@ async function load() {
   const requestedDiagram = diagram;
   pendingDiagram = diagram;
   refreshBtn.disabled = true;
+
   try {
     const res = await host.callTool("render_scene", { diagram: requestedDiagram });
+
     if (request !== requestVersion) return;
+
     if (res.isError) throw new Error(res.content?.find((c) => c.type === "text")?.text ?? "error");
-    const next = res.structuredContent as SceneData | undefined;
-    if (
-      !next ||
-      typeof next.name !== "string" ||
-      typeof next.url !== "string" ||
-      !Array.isArray(next.elements)
-    )
-      throw new Error("The host returned an invalid scene.");
-    data = next;
+    data = sceneDataSchema.parse(res.structuredContent);
     const sig = data.elements.map((e) => `${e.id}:${e.version}`).join(",");
+
     if (sig !== signature) {
       signature = sig;
       renderScene(svg, data.elements);
     }
+
     title.textContent = data.name;
     openBtn.hidden = false;
     const nodes = data.elements.filter((e) => e.type !== "text" && e.type !== "arrow").length;
@@ -67,7 +94,7 @@ async function load() {
       : "The canvas is empty.";
   } catch (e) {
     if (request === requestVersion)
-      status.textContent = `Couldn't load the diagram: ${(e as Error).message}`;
+      status.textContent = `Couldn't load the diagram: ${errorMessage(e)}`;
   } finally {
     if (request === requestVersion) {
       pendingDiagram = undefined;
@@ -82,6 +109,7 @@ function setDisplayMode(mode: string) {
   fullBtn.textContent = mode === "fullscreen" ? "Exit full screen" : "Full screen";
   // Follow the canvas live only while it has the user's full attention.
   clearInterval(poll);
+
   if (mode === "fullscreen") poll = setInterval(() => void load(), POLL_MS);
 }
 
@@ -100,30 +128,37 @@ function setDiagram(link: string) {
 
 function applyContext(ctx: McpUiHostContext) {
   document.documentElement.style.setProperty("--cursor-interaction", interactionCursor(ctx));
+
   if (ctx.theme) {
     applyDocumentTheme(ctx.theme);
     document.body.dataset.theme = ctx.theme;
   }
+
   if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+
   if (ctx.displayMode) setDisplayMode(ctx.displayMode);
+
   if (ctx.availableDisplayModes) fullBtn.hidden = !ctx.availableDisplayModes.includes("fullscreen");
 }
 
 refreshBtn.addEventListener("click", () => void load());
+
 openBtn.addEventListener("click", async () => {
   try {
     if (data) await host.openLink(data.url);
   } catch (error) {
-    status.textContent = (error as Error).message;
+    status.textContent = errorMessage(error);
   }
 });
+
 fullBtn.addEventListener("click", async () => {
   const want = displayMode === "fullscreen" ? "inline" : "fullscreen";
+
   try {
     const { mode } = await host.requestDisplayMode(want);
     setDisplayMode(mode);
   } catch (error) {
-    status.textContent = (error as Error).message;
+    status.textContent = errorMessage(error);
   }
 });
 
@@ -131,6 +166,7 @@ window.addEventListener("pagehide", () => {
   clearInterval(poll);
   host.dispose();
 });
+
 void host.start({ onDiagram: setDiagram, onContext: applyContext }).catch((error: Error) => {
   status.textContent = `Couldn't connect to the host: ${error.message}`;
 });

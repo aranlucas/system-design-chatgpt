@@ -3,7 +3,9 @@
 
 // Resource URIs are host cache keys; keep this experiment separate from the old view.
 export const VIEW_URI = "ui://system-design-canvas/diagram-extensions-v1.html";
+
 export const WORKSPACE_URI = "ui://system-design-canvas/workspace-v1.html";
+
 type ViewKind = "diagram" | "workspace";
 
 const ERROR_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8" /></head>
@@ -18,12 +20,15 @@ export async function viewHtml(
     const filename = kind === "workspace" ? "mcp-workspace.html" : "mcp-view.html";
     const res = await env.ASSETS.fetch(new Request(`${origin}/${filename}`));
     const html = await res.text();
+
     // The SPA fallback answers 200 with index.html when the view wasn't built.
     if (!res.ok || !html.includes('name="mcp-view"')) throw new Error(`status ${res.status}`);
+
     // The font is served from this worker, which the resource's CSP allows via resourceDomains.
     return html.replaceAll("__ORIGIN__", origin);
   } catch (e) {
     console.error("mcp view:", e);
+
     return ERROR_HTML;
   }
 }

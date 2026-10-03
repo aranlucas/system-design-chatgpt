@@ -27,6 +27,7 @@ describe("OpenAI Extensions host context", () => {
 
   it("ignores missing and malformed host state without interrupting the bridge", () => {
     expect(deepLinkUrl(undefined)).toBeUndefined();
+
     for (const state of [
       null,
       123,

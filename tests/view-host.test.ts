@@ -1,34 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import { App } from "@modelcontextprotocol/ext-apps";
 import { createViewHost, type ViewHost } from "../src/view/host.ts";
 
-type ToolInput = { arguments?: Record<string, unknown> };
-type ToolInputHandler = (input: ToolInput) => void;
-type ContextHandler = (context: McpUiHostContext) => void;
+const mcpApp = new App({ name: "view-host-test", version: "1.0.0" });
 
-const mcpApp = vi.hoisted(() => ({
-  connect: vi.fn(),
-  close: vi.fn(),
-  getHostContext: vi.fn(),
-  callServerTool: vi.fn(),
-  openLink: vi.fn(),
-  requestDisplayMode: vi.fn(),
-  ontoolinput: undefined as ToolInputHandler | undefined,
-  onhostcontextchanged: undefined as ContextHandler | undefined,
-}));
-vi.mock("@modelcontextprotocol/ext-apps", () => ({
-  App: vi.fn(function MockApp() {
-    return mcpApp;
-  }),
-}));
+const mcpSpies = {
+  connect: vi.spyOn(mcpApp, "connect"),
+  close: vi.spyOn(mcpApp, "close"),
+  getHostContext: vi.spyOn(mcpApp, "getHostContext"),
+  callServerTool: vi.spyOn(mcpApp, "callServerTool"),
+  openLink: vi.spyOn(mcpApp, "openLink"),
+  requestDisplayMode: vi.spyOn(mcpApp, "requestDisplayMode"),
+};
 
 const LINK = "https://design.example/d/board123?k=share-key";
+
 let host: ViewHost | undefined;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mcpApp.getHostContext.mockReturnValue({ theme: "dark", availableDisplayModes: ["inline"] });
+  mcpSpies.connect.mockResolvedValue(undefined);
+  mcpSpies.close.mockResolvedValue(undefined);
+  mcpSpies.callServerTool.mockResolvedValue({ content: [] });
+  mcpSpies.openLink.mockResolvedValue({});
+  mcpSpies.requestDisplayMode.mockResolvedValue({ mode: "fullscreen" });
+  mcpSpies.getHostContext.mockReturnValue({ theme: "dark", availableDisplayModes: ["inline"] });
 });
+
 afterEach(() => {
   host?.dispose();
   host = undefined;
@@ -38,10 +36,10 @@ describe("MCP Apps with OpenAI Extensions", () => {
   it("receives initial tool input during connection and subsequent delayed input", async () => {
     const onDiagram = vi.fn();
     const onContext = vi.fn();
-    mcpApp.connect.mockImplementation(async () => {
+    mcpSpies.connect.mockImplementation(async () => {
       mcpApp.ontoolinput?.({ arguments: { diagram: LINK } });
     });
-    host = createViewHost();
+    host = createViewHost(mcpApp);
     await host.start({ onDiagram, onContext });
     expect(onDiagram).toHaveBeenCalledWith(LINK);
     expect(onContext).toHaveBeenCalledWith({ theme: "dark", availableDisplayModes: ["inline"] });
@@ -52,11 +50,11 @@ describe("MCP Apps with OpenAI Extensions", () => {
   });
 
   it("receives a deep link from documented Extensions host context", async () => {
-    mcpApp.getHostContext.mockReturnValue({
+    mcpSpies.getHostContext.mockReturnValue({
       "openai/deepLink": { url: `/?diagram=${encodeURIComponent(LINK)}` },
     });
     const onDiagram = vi.fn();
-    host = createViewHost();
+    host = createViewHost(mcpApp);
     await host.start({ onDiagram, onContext: vi.fn() });
     expect(onDiagram).toHaveBeenCalledWith(LINK);
     mcpApp.onhostcontextchanged?.({ theme: "light" });
@@ -64,10 +62,10 @@ describe("MCP Apps with OpenAI Extensions", () => {
   });
 
   it("ignores malformed deep links without interrupting host updates", async () => {
-    mcpApp.getHostContext.mockReturnValue({ "openai/deepLink": { url: "http://[" } });
+    mcpSpies.getHostContext.mockReturnValue({ "openai/deepLink": { url: "http://[" } });
     const onDiagram = vi.fn();
     const onContext = vi.fn();
-    host = createViewHost();
+    host = createViewHost(mcpApp);
     await host.start({ onDiagram, onContext });
     expect(onDiagram).not.toHaveBeenCalled();
     mcpApp.onhostcontextchanged?.({ theme: "dark" });
@@ -76,9 +74,9 @@ describe("MCP Apps with OpenAI Extensions", () => {
 
   it("accepts the legacy deep-link payload on later host updates", async () => {
     const onDiagram = vi.fn();
-    host = createViewHost();
+    host = createViewHost(mcpApp);
     await host.start({ onDiagram, onContext: vi.fn() });
-    mcpApp.getHostContext.mockReturnValue({
+    mcpSpies.getHostContext.mockReturnValue({
       "openai/deepLink": { path: [], query: [["diagram", LINK]] },
     });
     mcpApp.onhostcontextchanged?.({ theme: "light" });
@@ -86,28 +84,28 @@ describe("MCP Apps with OpenAI Extensions", () => {
   });
 
   it("keeps shared tool, display, and navigation APIs working without OpenAI host capabilities", async () => {
-    host = createViewHost();
+    host = createViewHost(mcpApp);
     await host.start({ onDiagram: vi.fn(), onContext: vi.fn() });
     await host.callTool("render_scene", { diagram: LINK });
-    expect(mcpApp.callServerTool).toHaveBeenCalledWith({
+    expect(mcpSpies.callServerTool).toHaveBeenCalledWith({
       name: "render_scene",
       arguments: { diagram: LINK },
     });
     await host.openLink(LINK);
-    expect(mcpApp.openLink).toHaveBeenCalledWith({ url: LINK });
+    expect(mcpSpies.openLink).toHaveBeenCalledWith({ url: LINK });
     await host.requestDisplayMode("fullscreen");
-    expect(mcpApp.requestDisplayMode).toHaveBeenCalledWith({ mode: "fullscreen" });
+    expect(mcpSpies.requestDisplayMode).toHaveBeenCalledWith({ mode: "fullscreen" });
     host.dispose();
-    expect(mcpApp.close).toHaveBeenCalled();
+    expect(mcpSpies.close).toHaveBeenCalled();
   });
 
   it("preserves tool and connection failures for the view to display", async () => {
-    host = createViewHost();
-    mcpApp.connect.mockRejectedValue(new Error("Disconnected"));
+    host = createViewHost(mcpApp);
+    mcpSpies.connect.mockRejectedValue(new Error("Disconnected"));
     await expect(host.start({ onDiagram: vi.fn(), onContext: vi.fn() })).rejects.toThrow(
       "Disconnected",
     );
-    mcpApp.callServerTool.mockRejectedValue(new Error("Revoked link"));
+    mcpSpies.callServerTool.mockRejectedValue(new Error("Revoked link"));
     await expect(host.callTool("render_scene", { diagram: LINK })).rejects.toThrow("Revoked link");
   });
 });

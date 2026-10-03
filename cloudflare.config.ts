@@ -42,6 +42,7 @@ export default defineConfig((ctx) => {
       },
     };
   }
+
   return {
     worker: {
       exports: {

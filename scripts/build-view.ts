@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { build } from "vite";
 
 type ViewBuild = { entry: string; template: string; output: string; name: string };
+
 const views: ViewBuild[] = [
   {
     entry: "src/view/main.ts",
@@ -32,9 +33,11 @@ async function buildView(view: ViewBuild) {
   });
 
   const results = Array.isArray(out) ? out : [out];
+
   const chunk = results
     .flatMap((r) => ("output" in r ? r.output : []))
     .find((o) => o.type === "chunk");
+
   if (!chunk || chunk.type !== "chunk") throw new Error("view build produced no JS chunk");
 
   const js = chunk.code.replaceAll("</script", "<\\/script");

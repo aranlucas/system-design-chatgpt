@@ -7,7 +7,9 @@ import {
 } from "../src/shared/embedded-canvas.ts";
 
 const ORIGIN = "https://design.example";
+
 const HOST = "https://widget.example";
+
 const LINK = `${ORIGIN}/d/board123?k=share-key`;
 
 describe("Extensions canvas embedding boundary", () => {
@@ -15,10 +17,12 @@ describe("Extensions canvas embedding boundary", () => {
     const url = new URL(
       embeddedCanvasUrl(`${LINK}&host_origin=https://wrong.example#fragment`, ORIGIN, HOST),
     );
+
     expect(url.origin).toBe(ORIGIN);
     expect(url.searchParams.get("k")).toBe("share-key");
     expect(url.searchParams.get("host_origin")).toBe(HOST);
     expect(url.hash).toBe("");
+
     for (const link of [
       "https://other.example/d/board123?k=key",
       `${ORIGIN}/api/diagrams`,
@@ -31,6 +35,7 @@ describe("Extensions canvas embedding boundary", () => {
   it("accepts exact HTTP(S) parent origins and rejects paths, credentials, and opaque origins", () => {
     expect(embeddedHostOrigin(`?host_origin=${encodeURIComponent(HOST)}`)).toBe(HOST);
     expect(embeddedHostOrigin("?host_origin=http://localhost:5173")).toBe("http://localhost:5173");
+
     for (const origin of [
       "null",
       "javascript:alert(1)",

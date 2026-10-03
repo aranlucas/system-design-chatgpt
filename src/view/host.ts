@@ -1,14 +1,19 @@
+import { z } from "zod";
 import { App, type McpUiDisplayMode, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import { deepLinkUrl } from "../shared/openai-extensions.ts";
 
-type ToolArguments = Record<string, unknown>;
+type ToolArguments = NonNullable<Parameters<App["callServerTool"]>[0]["arguments"]>;
+
 type ToolContent = { type: string; text?: string };
+
 export type ViewToolResult = {
   isError?: boolean;
   content?: ToolContent[];
   structuredContent?: unknown;
 };
+
 type DisplayModeResult = { mode: McpUiDisplayMode };
+
 export type ViewHostCallbacks = {
   onDiagram: (diagram: string) => void;
   onContext: (context: McpUiHostContext) => void;
@@ -23,21 +28,25 @@ export interface ViewHost {
 }
 
 /** MCP Apps v2 handles the bridge; Extensions navigation comes from host context. */
-export function createViewHost(): ViewHost {
-  const app = new App(
+export function createViewHost(
+  app = new App(
     { name: "diagram-view", version: "1.2.0" },
     { availableDisplayModes: ["inline", "fullscreen"] },
-  );
+  ),
+): ViewHost {
   let lastDeepLink: string | undefined;
 
   function applyDeepLink(callbacks: ViewHostCallbacks) {
     const deepLink = deepLinkUrl(app.getHostContext());
+
     if (!deepLink || deepLink === lastDeepLink) return;
     lastDeepLink = deepLink;
+
     try {
       const diagram = new URL(deepLink, "https://system-design.invalid").searchParams.get(
         "diagram",
       );
+
       if (diagram) callbacks.onDiagram(diagram);
     } catch {
       // Ignore malformed host navigation without interrupting the shared bridge.
@@ -47,14 +56,19 @@ export function createViewHost(): ViewHost {
   return {
     async start(callbacks) {
       app.ontoolinput = ({ arguments: args }) => {
-        if (typeof args?.diagram === "string") callbacks.onDiagram(args.diagram);
+        const diagram = z.string().safeParse(args?.diagram);
+
+        if (diagram.success) callbacks.onDiagram(diagram.data);
       };
+
       app.onhostcontextchanged = (context) => {
         callbacks.onContext(context);
         applyDeepLink(callbacks);
       };
+
       await app.connect();
       const context = app.getHostContext();
+
       if (context) callbacks.onContext(context);
       applyDeepLink(callbacks);
     },
