@@ -258,7 +258,7 @@ async function callback(
   const { clientId, clientSecret } = githubConfig(env);
 
   const res = await fetch(GITHUB_TOKEN, {
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -313,7 +313,7 @@ async function fetchGithubUser(accessToken: string): Promise<GithubUser | null> 
       accept: "application/vnd.github+json",
       "user-agent": "system-design-chatgpt",
     },
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
   });
 

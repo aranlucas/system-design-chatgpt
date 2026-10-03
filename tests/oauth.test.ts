@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.stubGlobal("Cloudflare", { compatibilityFlags: { global_fetch_strictly_public: true } });
   github = vi.fn(async (input: string | URL, init?: RequestInit) => {
     if (String(input) === "https://github.com/login/oauth/access_token") {
-      expect(init?.redirect).toBe("error");
+      expect(init?.redirect).toBe("manual");
 
       return Response.json({ access_token: "upstream-github-token" });
     }

@@ -2,7 +2,6 @@ import { bindings, defineConfig, exports } from "cf/config";
 
 import { RUN_WORKER_FIRST } from "./src/worker/oauth-paths.ts";
 
-// Replace placeholder IDs with this repository's own resources before deployment.
 const COMPATIBILITY_FLAGS = ["nodejs_compat", "global_fetch_strictly_public"];
 
 export default defineConfig((ctx) => {
@@ -26,13 +25,13 @@ export default defineConfig((ctx) => {
         env: {
           DB: bindings.d1({
             name: "system-design-chatgpt-preview",
-            id: "00000000-0000-0000-0000-000000000002",
+            id: "c30f0c8e-3349-42c4-a976-e3e5601cd295",
           }),
           BUCKET: bindings.r2({
             name: "system-design-chatgpt-preview",
           }),
           // bindings.kv takes only the id; wrangler.jsonc is where the name lives.
-          OAUTH_KV: bindings.kv({ id: "00000000000000000000000000000002" }),
+          OAUTH_KV: bindings.kv({ id: "0826131f4f664cc4a793411a263ef106" }),
           ROOM: bindings.durableObject({
             worker: "system-design-chatgpt",
             exportName: "DiagramRoom",
@@ -62,13 +61,13 @@ export default defineConfig((ctx) => {
       env: {
         DB: bindings.d1({
           name: "system-design-chatgpt",
-          id: "00000000-0000-0000-0000-000000000001",
+          id: "44457e48-2445-4405-abc3-f5b514c6bee5",
         }),
         BUCKET: bindings.r2({
           name: "system-design-chatgpt",
         }),
         // bindings.kv takes only the id; wrangler.jsonc is where the name lives.
-        OAUTH_KV: bindings.kv({ id: "00000000000000000000000000000001" }),
+        OAUTH_KV: bindings.kv({ id: "ef2283e33e7d45398b5dc7db2a212e6e" }),
         ROOM: bindings.durableObject({
           worker: "system-design-chatgpt",
           exportName: "DiagramRoom",

@@ -513,8 +513,9 @@ async function post(
 
     const res = await fetch(sub.callbackUrl, {
       method: "POST",
-      // A redirect can point at an internal address that the subscribe-time check missed.
-      redirect: "error",
+      // Never follow a redirect: it can point at an internal address the subscribe-time check missed.
+      // Workers rejects redirect: "error", so a 3xx comes back as the delivery status instead.
+      redirect: "manual",
       signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
       headers: {
         "content-type": "application/json",

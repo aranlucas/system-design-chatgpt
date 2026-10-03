@@ -136,7 +136,7 @@ export async function browserCallback(request: Request, env: Env): Promise<Respo
 
   const exchanged = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -156,7 +156,7 @@ export async function browserCallback(request: Request, env: Env): Promise<Respo
     throw new HTTPException(502, { message: "GitHub sign-in failed." });
 
   const identityResponse = await fetch("https://api.github.com/user", {
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
     headers: {
       Authorization: `Bearer ${token.access_token}`,

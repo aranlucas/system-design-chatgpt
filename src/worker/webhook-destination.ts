@@ -39,7 +39,7 @@ export async function checkCallbackDestination(env: Env, value: string): Promise
 
       const response = await fetch(endpoint, {
         headers: { accept: "application/dns-json" },
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.timeout(5_000),
       });
 

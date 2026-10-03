@@ -32,16 +32,15 @@
     {
       "binding": "DB",
       "database_name": "system-design-chatgpt",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "44457e48-2445-4405-abc3-f5b514c6bee5",
     },
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "system-design-chatgpt" }],
-  // Replace the placeholder IDs with this repository's own Cloudflare resources before deploying.
   // Dedicated production OAuth tokens and codes. Preview uses a separate namespace.
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
-      "id": "00000000000000000000000000000001",
+      "id": "ef2283e33e7d45398b5dc7db2a212e6e",
     },
   ],
   "observability": { "enabled": true },
@@ -53,10 +52,10 @@
       {
         "binding": "DB",
         "database_name": "system-design-chatgpt-preview",
-        "database_id": "00000000-0000-0000-0000-000000000002",
+        "database_id": "c30f0c8e-3349-42c4-a976-e3e5601cd295",
       },
     ],
     "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "system-design-chatgpt-preview" }],
-    "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "00000000000000000000000000000002" }],
+    "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "0826131f4f664cc4a793411a263ef106" }],
   },
 }
