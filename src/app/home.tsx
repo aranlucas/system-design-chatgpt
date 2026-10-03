@@ -1,3 +1,15 @@
+import {
+  assertBoundary,
+  isCreatedDiagram,
+  isApiFailure,
+  isBrowserSession,
+  isTemplateList,
+  isDiagramPage,
+  type BrowserSession,
+  type Template,
+  type DiagramPage,
+  type Diagram,
+} from "./validation.ts";
 import { useState } from "react";
 import {
   useInfiniteQuery,
@@ -7,64 +19,56 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { getJson } from "./queries.ts";
-import { apiErrorMessage, type ApiFailure } from "./api-error.ts";
+import { apiErrorMessage } from "./api-error.ts";
 import { CopyRow } from "./copy-row.tsx";
 import { linkFor, remember, setupCommands } from "./local.ts";
 
-/** What POST /api/diagrams answers. */
-type CreatedDiagram = { id: string; key: string; name: string } & ApiFailure;
-type BrowserSession = { signedIn: boolean };
-
-interface Diagram {
-  id: string;
-  key: string;
-  name: string;
-  createdAt: number;
-}
-
-interface DiagramPage {
-  items: Diagram[];
-  nextCursor: string | null;
-}
-
-interface Template {
-  id: string;
-  name: string;
-  description: string;
+function initialCursor(): string | null {
+  return null;
 }
 
 export function Home() {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("");
+
   const session = useQuery({
     queryKey: ["session"],
-    queryFn: ({ signal }) => getJson<BrowserSession>("/api/auth/session", signal),
+    queryFn: ({ signal }) => getJson<BrowserSession>("/api/auth/session", signal, isBrowserSession),
   });
+
   const signedIn = session.data?.signedIn;
+
   const templatesQuery = useQuery({
     queryKey: ["templates", signedIn],
-    queryFn: ({ signal }) => getJson<Template[]>("/api/templates", signal),
+    queryFn: ({ signal }) => getJson<Template[]>("/api/templates", signal, isTemplateList),
     enabled: signedIn !== undefined,
   });
+
   const diagrams = useInfiniteQuery({
     queryKey: ["diagrams"],
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ limit: "50" });
+
       if (pageParam) params.set("cursor", pageParam);
-      return getJson<DiagramPage>(`/api/diagrams?${params}`, signal);
+
+      return getJson<DiagramPage>(`/api/diagrams?${params}`, signal, isDiagramPage);
     },
-    initialPageParam: null as string | null,
+    initialPageParam: initialCursor(),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: signedIn === true,
     refetchInterval: 10_000,
   });
+
   const items = signedIn ? (diagrams.data?.pages.flatMap((page) => page.items) ?? []) : [];
   const templates = templatesQuery.data ?? [];
+
   const remove = useMutation({
     mutationFn: async (diagram: Diagram) => {
       const response = await fetch(`/api/diagrams/${diagram.id}`, { method: "DELETE" });
+
       if (!response.ok) throw new Error("Could not delete diagram. Please try again.");
+
       return diagram.id;
     },
     onSuccess: async (id) => {
@@ -83,9 +87,11 @@ export function Home() {
       await queryClient.invalidateQueries({ queryKey: ["diagrams"] });
     },
   });
+
   const logout = useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/auth/logout", { method: "POST" });
+
       if (!response.ok) throw new Error("Could not sign out. Try again.");
     },
     onSuccess: async () => {
@@ -96,6 +102,7 @@ export function Home() {
       setTemplate("");
     },
   });
+
   const creation = useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/diagrams", {
@@ -103,16 +110,25 @@ export function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: name || "Untitled", template }),
       });
-      const diagram = (await response.json()) as CreatedDiagram;
-      if (!response.ok) throw new Error(apiErrorMessage(diagram, "Could not create the diagram."));
-      return diagram;
+
+      const body: unknown = await response.json();
+
+      if (!response.ok)
+        throw new Error(
+          apiErrorMessage(isApiFailure(body) ? body : {}, "Could not create the diagram."),
+        );
+      assertBoundary(body, isCreatedDiagram);
+
+      return body;
     },
     onSuccess: (diagram) => {
       remember({ id: diagram.id, key: diagram.key, name: diagram.name });
       location.href = linkFor(diagram.id, diagram.key);
     },
   });
+
   const loading = session.isLoading || (signedIn === true && diagrams.isLoading);
+
   const error =
     session.error?.message ||
     logout.error?.message ||
@@ -138,7 +154,6 @@ export function Home() {
       <p className="muted">
         A shared Excalidraw canvas that you, your interviewer, and Claude edit together.
       </p>
-
       <section className="card">
         {session.isLoading && <p className="muted">Checking sign-in…</p>}
         {signedIn === false && (
@@ -153,7 +168,6 @@ export function Home() {
           </button>
         )}
       </section>
-
       {signedIn && (
         <section className="card">
           <h2>New diagram</h2>
@@ -183,7 +197,6 @@ export function Home() {
           </form>
         </section>
       )}
-
       <section className="card">
         <h2>Connect your agent</h2>
         <p className="muted">
@@ -194,7 +207,6 @@ export function Home() {
           <CopyRow key={client} label={client} text={cmd} />
         ))}
       </section>
-
       <section className="card">
         <h2>Your diagrams</h2>
         {loading && <p className="muted">Loading diagrams…</p>}

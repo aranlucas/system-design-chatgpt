@@ -7,6 +7,7 @@ interface CopyRowProps {
 
 export function CopyRow({ label, text }: CopyRowProps) {
   const [copied, setCopied] = useState(false);
+
   return (
     <div className="row">
       {label && <span className="copy-label">{label}</span>}
