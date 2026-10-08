@@ -15,8 +15,8 @@ jobs:
       - uses: pnpm/setup@v3
         with:
           runtime: node@24
-          require-lockfile: true
           cache: true
+          install: false
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm check
       - run: pnpm test
