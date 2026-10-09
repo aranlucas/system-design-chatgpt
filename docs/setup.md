@@ -7,29 +7,31 @@ How to run, deploy and connect System Design for ChatGPT. For what it does, see 
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev          # http://localhost:5173
+npm install -g portless@0.15.7
+pnpm dev          # https://system-design-chatgpt.localhost
 ```
 
-1. Configure local GitHub sign-in as described below, then open http://localhost:5173
+1. Configure local GitHub sign-in as described below, then open https://system-design-chatgpt.localhost
    and create a diagram (optionally from a template).
 2. Add the MCP server once (use the deployed URL + `/mcp` in production):
-   - Claude Code: `claude mcp add --transport http system-design http://localhost:5173/mcp`
-   - Codex: `codex mcp add system-design --url http://localhost:5173/mcp`
+   - Claude Code: `claude mcp add --transport http system-design https://system-design-chatgpt.localhost/mcp`
+   - Codex: `codex mcp add system-design --url https://system-design-chatgpt.localhost/mcp`
 3. Tell the agent "join <share link>", then draw together.
 
 If you previously registered this server as `canvas`, remove that entry in your MCP client
 and add it again as `system-design` using the command above. Existing diagram links still
 work.
 
-### Named local URL with Portless
+### Development URL with Portless
 
-[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) gives this checkout a
-stable local URL. Complete the local setup above, use **Node.js 24 or newer**
-(within this project's supported range), then run:
+The normal `pnpm run dev` command uses
+[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) for a stable local URL.
+Install its CLI once with **Node.js 24 or newer** (within this project's supported
+range), then run:
 
 ```sh
 npm install -g portless@0.15.7
-pnpm run dev:portless
+pnpm run dev
 ```
 
 Open **https://system-design-chatgpt.localhost** with the default proxy settings.
@@ -43,7 +45,7 @@ The MCP view build still completes before Vite starts.
 
 Linked Git worktrees receive a branch-name prefix, such as
 `https://fix-ui.system-design-chatgpt.localhost`; use the URL Portless prints.
-Use `pnpm run dev` for the existing direct-server workflow.
+Use `pnpm run dev:direct` to run the original localhost server without Portless.
 
 For local GitHub sign-in, configure a separate development OAuth app with
 homepage `https://system-design-chatgpt.localhost` and callback
@@ -107,7 +109,7 @@ that sign-in is not configured. The two `OAUTH_KV` namespaces (production and pr
 tokens and codes; nothing else moves into KV.
 
 For local sign-in, create a separate GitHub OAuth app with callback URL
-`http://localhost:5173/github/callback`, and put its credentials in an ignored `.dev.vars`:
+`https://system-design-chatgpt.localhost/github/callback`, and put its credentials in an ignored `.dev.vars`:
 
 ```dotenv
 GITHUB_CLIENT_ID=<local-app-client-id>
