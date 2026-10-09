@@ -7,19 +7,28 @@ How to run, deploy and connect System Design for ChatGPT. For what it does, see 
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev          # http://localhost:5173
+pnpm dev          # https://system-design-chatgpt.localhost
 ```
 
-1. Configure local GitHub sign-in as described below, then open http://localhost:5173
+1. Configure local GitHub sign-in as described below, then open https://system-design-chatgpt.localhost
    and create a diagram (optionally from a template).
 2. Add the MCP server once (use the deployed URL + `/mcp` in production):
-   - Claude Code: `claude mcp add --transport http system-design http://localhost:5173/mcp`
-   - Codex: `codex mcp add system-design --url http://localhost:5173/mcp`
+   - Claude Code: `claude mcp add --transport http system-design https://system-design-chatgpt.localhost/mcp`
+   - Codex: `codex mcp add system-design --url https://system-design-chatgpt.localhost/mcp`
 3. Tell the agent "join <share link>", then draw together.
 
 If you previously registered this server as `canvas`, remove that entry in your MCP client
 and add it again as `system-design` using the command above. Existing diagram links still
 work.
+
+### Portless
+
+`pnpm dev` runs Vite through [Portless](https://github.com/vercel-labs/portless) (a dev
+dependency); its first run may ask for `sudo` to bind port 443 and trust a local
+certificate. Linked Git worktrees get a branch prefix, such as
+`https://fix-ui.system-design-chatgpt.localhost`; register that origin's `/github/callback` in the
+development OAuth app. Node MCP clients started outside Portless may need
+`NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`.
 
 ## Deploy (Cloudflare)
 
@@ -73,7 +82,7 @@ that sign-in is not configured. The two `OAUTH_KV` namespaces (production and pr
 tokens and codes; nothing else moves into KV.
 
 For local sign-in, create a separate GitHub OAuth app with callback URL
-`http://localhost:5173/github/callback`, and put its credentials in an ignored `.dev.vars`:
+`https://system-design-chatgpt.localhost/github/callback`, and put its credentials in an ignored `.dev.vars`:
 
 ```dotenv
 GITHUB_CLIENT_ID=<local-app-client-id>
