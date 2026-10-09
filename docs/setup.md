@@ -45,7 +45,6 @@ The MCP view build still completes before Vite starts.
 
 Linked Git worktrees receive a branch-name prefix, such as
 `https://fix-ui.system-design-chatgpt.localhost`; use the URL Portless prints.
-Use `pnpm run dev:direct` to run the original localhost server without Portless.
 
 For local GitHub sign-in, configure a separate development OAuth app with
 homepage `https://system-design-chatgpt.localhost` and callback
