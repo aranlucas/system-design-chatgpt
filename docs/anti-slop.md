@@ -1,22 +1,17 @@
 # Anti-slop enforcement
 
-The repository vendors the complete `src/` tree of
-[dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) at
-`c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b`, under
-`tools/oxlint/anti-slop/`. The upstream MIT license and nested Stylistic
-license/provenance are retained. This includes the upstream generic and Effect
-rule tests, even though this application has no direct Effect dependency and
-therefore enables no Effect-specific rules. There is no official anti-slop npm
-package; the plugin is loaded directly from the vendored entry point.
+The rules come from
+[`@aranlucas/oxlint-plugin-anti-slop`](https://github.com/aranlucas/oxlint-plugin-anti-slop),
+a packaged fork of [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop).
+Its `UPSTREAM.md` records the pinned upstream commit and licenses. The package
+ships no Effect rules; this application has no direct Effect dependency.
 
 All 18 generic rules and `oxc/no-accumulating-spread` are errors. The existing
 local named-type and filename rules, type-aware checking, warning limit,
-unused-suppression checking, and CI checks remain enabled. Oxlint and
-`@oxlint/plugins` are pinned together at 1.85.0, the previous resolved Oxlint
-version. The declared package manager stays pnpm 12.6.0; unrelated dependency
-resolutions are unchanged. Existing CI runs check, unit tests, scene smoke,
-production builds and bundle budgets. Vendored tests are outside application
-Vitest's existing `tests/**/*.test.ts` discovery and can run independently.
+unused-suppression checking, and CI checks remain enabled. The declared
+package manager stays pnpm 12.6.0; unrelated dependency resolutions are
+unchanged. Existing CI runs check, unit tests, scene smoke, production builds
+and bundle budgets.
 
 ## Contracts and narrow exceptions
 

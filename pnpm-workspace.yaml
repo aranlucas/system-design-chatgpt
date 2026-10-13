@@ -17,6 +17,8 @@ minimumReleaseAgeExclude:
   - oxlint-tsgolint@7.0.2003
   - "@cloudflare/codemods@0.2.1"
   - cf@1.0.0-beta.5
+  - "@aranlucas/*"
+  - "@oxlint/plugins@1.88.0"
 overrides:
   "lodash-es@>=4 <4.18.1": 4.18.1
   "nanoid@>=3 <3.3.19": 3.3.19
