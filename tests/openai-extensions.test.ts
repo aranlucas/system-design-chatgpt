@@ -26,7 +26,7 @@ describe("OpenAI Extensions host context", () => {
   });
 
   it("ignores missing and malformed host state without interrupting the bridge", () => {
-    expect(deepLinkUrl(undefined)).toBeUndefined();
+    expect(deepLinkUrl()).toBeUndefined();
 
     for (const state of [
       null,
@@ -34,9 +34,10 @@ describe("OpenAI Extensions host context", () => {
       { url: 123 },
       { path: [], query: [["key"]] },
       { path: [123], query: [] },
-      { path: ["\ud800"], query: [] },
-    ])
+      { path: ["\uD800"], query: [] },
+    ]) {
       expect(deepLinkUrl({ "openai/deepLink": state })).toBeUndefined();
+    }
   });
 
   it("honors a supported cursor preference and defaults for older hosts", () => {

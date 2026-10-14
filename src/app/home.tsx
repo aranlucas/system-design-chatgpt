@@ -50,7 +50,9 @@ export function Home() {
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ limit: "50" });
 
-      if (pageParam) params.set("cursor", pageParam);
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
 
       return getJson<DiagramPage>(`/api/diagrams?${params}`, signal, isDiagramPage);
     },
@@ -67,7 +69,9 @@ export function Home() {
     mutationFn: async (diagram: Diagram) => {
       const response = await fetch(`/api/diagrams/${diagram.id}`, { method: "DELETE" });
 
-      if (!response.ok) throw new Error("Could not delete diagram. Please try again.");
+      if (!response.ok) {
+        throw new Error("Could not delete diagram. Please try again.");
+      }
 
       return diagram.id;
     },
@@ -92,7 +96,9 @@ export function Home() {
     mutationFn: async () => {
       const response = await fetch("/api/auth/logout", { method: "POST" });
 
-      if (!response.ok) throw new Error("Could not sign out. Try again.");
+      if (!response.ok) {
+        throw new Error("Could not sign out. Try again.");
+      }
     },
     onSuccess: async () => {
       await queryClient.cancelQueries();
@@ -113,10 +119,12 @@ export function Home() {
 
       const body: unknown = await response.json();
 
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           apiErrorMessage(isApiFailure(body) ? body : {}, "Could not create the diagram."),
         );
+      }
+
       assertBoundary(body, isCreatedDiagram);
 
       return body;
@@ -129,20 +137,22 @@ export function Home() {
 
   const loading = session.isLoading || (signedIn === true && diagrams.isLoading);
 
-  const error =
-    session.error?.message ||
-    logout.error?.message ||
-    creation.error?.message ||
-    remove.error?.message ||
-    (signedIn && (diagrams.error?.message || templatesQuery.error?.message));
+  const error = [
+    session.error?.message,
+    logout.error?.message,
+    creation.error?.message,
+    remove.error?.message,
+    ...(signedIn ? [diagrams.error?.message, templatesQuery.error?.message] : []),
+  ].find((message) => message !== undefined && message !== "");
 
   function removeDiagram(diagram: Diagram) {
     if (
       window.confirm(
         `Delete “${diagram.name}”? This permanently removes its canvas, images and saved versions for everyone.`,
       )
-    )
+    ) {
       remove.mutate(diagram);
+    }
   }
 
   return (
@@ -159,11 +169,16 @@ export function Home() {
         {signedIn === false && (
           <p>
             <a href="/api/auth/login">Sign in with GitHub</a> to create diagrams and open your
-            private library. Anyone with a diagram's share link can still collaborate.
+            private library. Anyone with a diagram&apos;s share link can still collaborate.
           </p>
         )}
         {signedIn && (
-          <button className="link" disabled={logout.isPending} onClick={() => logout.mutate()}>
+          <button
+            type="button"
+            className="link"
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
+          >
             Sign out
           </button>
         )}
@@ -191,7 +206,7 @@ export function Home() {
                 </option>
               ))}
             </select>
-            <button disabled={creation.isPending}>
+            <button type="submit" disabled={creation.isPending}>
               {creation.isPending ? "Creating…" : "Create"}
             </button>
           </form>
@@ -200,8 +215,8 @@ export function Home() {
       <section className="card">
         <h2>Connect your agent</h2>
         <p className="muted">
-          Run once in your terminal. Then paste a diagram's share link to the agent ("join
-          &lt;link&gt;").
+          Run once in your terminal. Then paste a diagram&apos;s share link to the agent (&quot;join
+          &lt;link&gt;&quot;).
         </p>
         {setupCommands().map(({ client, cmd }) => (
           <CopyRow key={client} label={client} text={cmd} />
@@ -220,6 +235,7 @@ export function Home() {
               <a href={linkFor(d.id, d.key)}>{d.name}</a>
               <span className="muted">{new Date(d.createdAt).toLocaleString()}</span>
               <button
+                type="button"
                 className="link"
                 disabled={remove.isPending}
                 aria-label={`Delete ${d.name}`}
@@ -231,7 +247,11 @@ export function Home() {
           ))}
         </ul>
         {signedIn && diagrams.hasNextPage && (
-          <button disabled={diagrams.isFetching} onClick={() => void diagrams.fetchNextPage()}>
+          <button
+            type="button"
+            disabled={diagrams.isFetching}
+            onClick={() => void diagrams.fetchNextPage()}
+          >
             {diagrams.isFetchingNextPage ? "Loading…" : "Load more diagrams"}
           </button>
         )}
