@@ -28,15 +28,21 @@ const legacyLinkSchema = z.object({
 });
 
 /** Read the documented URL payload and accept the older installed-host representation. */
-export function deepLinkUrl(context: McpUiHostContext | undefined): string | undefined {
+export function deepLinkUrl(context?: McpUiHostContext): string | undefined {
   const state = context?.["openai/deepLink"];
 
   const direct = directLinkSchema.safeParse(state);
 
-  if (direct.success) return direct.data.url;
+  if (direct.success) {
+    return direct.data.url;
+  }
+
   const legacy = legacyLinkSchema.safeParse(state);
 
-  if (!legacy.success) return undefined;
+  if (!legacy.success) {
+    return undefined;
+  }
+
   const candidate = legacy.data;
 
   try {

@@ -38,9 +38,11 @@ async function buildView(view: ViewBuild) {
     .flatMap((r) => ("output" in r ? r.output : []))
     .find((o) => o.type === "chunk");
 
-  if (!chunk || chunk.type !== "chunk") throw new Error("view build produced no JS chunk");
+  if (chunk?.type !== "chunk") {
+    throw new Error("view build produced no JS chunk");
+  }
 
-  const js = chunk.code.replaceAll("</script", "<\\/script");
+  const js = chunk.code.replaceAll("</script", String.raw`<\/script`);
   const html = readFileSync(view.template, "utf8").replace("/* VIEW_SCRIPT */", () => js);
   writeFileSync(view.output, html);
   console.log(`view: ${view.output} (${(html.length / 1024).toFixed(1)} KiB)`);

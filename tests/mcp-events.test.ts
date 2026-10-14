@@ -1,3 +1,4 @@
+import { requiredTestValue } from "./helpers/required-test-value.ts";
 import { strictFake } from "./helpers/strict-fake.ts";
 import { sceneDataSchema } from "../src/shared/schemas.ts";
 import {
@@ -5,10 +6,10 @@ import {
   grantSchema,
   toolsListSchema,
   eventsListSchema,
+  eventBodySchema,
 } from "./helpers/response-schemas.ts";
 import type { JsonInput } from "./helpers/response-schemas.ts";
 import { z } from "zod";
-import { eventBodySchema } from "./helpers/response-schemas.ts";
 // MCP Events: the catalog, the subscribe/unsubscribe contract, and signed delivery.
 //
 // The OAuth gate is covered in http.test.ts; these tests drive the MCP surface
@@ -163,7 +164,9 @@ class Receiver {
     });
 
     if (body.type === "verification") {
-      if (!this.echoChallenge) return new Response("nope", { status: 400 });
+      if (!this.echoChallenge) {
+        return new Response("nope", { status: 400 });
+      }
 
       return Response.json({ challenge: body.challenge });
     }
@@ -187,8 +190,9 @@ beforeEach(() => {
   // between tests that reuse the same principal and callback URL.
   resetVerificationCache();
   vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
-    if (new URL(input).hostname === "cloudflare-dns.com")
+    if (new URL(input).hostname === "cloudflare-dns.com") {
       return Response.json({ Status: 0, TC: false, Answer: [{ type: 1, data: "8.8.8.8" }] });
+    }
 
     return receiver.fetch(input, init);
   });
@@ -212,7 +216,9 @@ async function rpc(method: string, params: Record<string, JsonInput>, principal 
 
   const targetName = z.string().safeParse(target);
 
-  if (targetName.success) headers.set("mcp-name", targetName.data);
+  if (targetName.success) {
+    headers.set("mcp-name", targetName.data);
+  }
 
   const response = await handleMcp(
     new Request("https://design.example/mcp", {
@@ -275,7 +281,11 @@ async function newDiagram(name = "Board") {
 describe("public MCP tool metadata", () => {
   it("registers sidebar and conversation entrypoints in the Extensions wire metadata", async () => {
     const { result } = await rpcParsed(toolsMetadataSchema, "tools/list", {});
-    const opener = result!.tools.find((tool) => tool.name === "open_canvas")!;
+
+    const opener = requiredTestValue(
+      requiredTestValue(result).tools.find((tool) => tool.name === "open_canvas"),
+    );
+
     expect(opener["_meta"]).toMatchObject({
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app"] },
     });
@@ -336,7 +346,7 @@ describe("public MCP tool metadata", () => {
       uri: WORKSPACE_URI,
     });
 
-    const resource = result!.contents[0];
+    const resource = requiredTestValue(result).contents[0];
     expect(resource["_meta"]).toMatchObject({
       ui: { csp: { frameDomains: ["https://design.example"] } },
     });
@@ -370,8 +380,15 @@ describe("public MCP tool metadata", () => {
   });
   it("advertises ChatGPT compatibility metadata on the MCP 2.0 transport", async () => {
     const { result } = await rpcParsed(toolsMetadataSchema, "tools/list", {});
-    const scene = result!.tools.find((tool) => tool.name === "get_scene")!;
-    const render = result!.tools.find((tool) => tool.name === "render_scene")!;
+
+    const scene = requiredTestValue(
+      requiredTestValue(result).tools.find((tool) => tool.name === "get_scene"),
+    );
+
+    const render = requiredTestValue(
+      requiredTestValue(result).tools.find((tool) => tool.name === "render_scene"),
+    );
+
     expect(scene["_meta"]).toMatchObject({
       ui: { resourceUri: VIEW_URI },
       "openai/outputTemplate": VIEW_URI,
@@ -394,7 +411,7 @@ describe("public MCP tool metadata", () => {
     });
 
     expect(error).toBeUndefined();
-    expect(result!.contents[0]).toMatchObject({
+    expect(requiredTestValue(result).contents[0]).toMatchObject({
       uri: VIEW_URI,
       mimeType: "text/html;profile=mcp-app",
       text: '<meta name="mcp-view"><b>https://design.example</b>',
@@ -412,7 +429,7 @@ describe("public MCP tool metadata", () => {
   it("advertises explicit safety hints for every tool, including the app-only view", async () => {
     const reply = await rpcTools("tools/list", {});
     expect(reply.error).toBeUndefined();
-    const tools = reply.result!.tools;
+    const tools = requiredTestValue(reply.result).tools;
     expect(tools).toHaveLength(18);
 
     for (const tool of tools) {
@@ -420,7 +437,9 @@ describe("public MCP tool metadata", () => {
       expect(tool.annotations?.destructiveHint, tool.name).toBeTypeOf("boolean");
       expect(tool.annotations?.openWorldHint, tool.name).toBeTypeOf("boolean");
 
-      if (tool.annotations?.readOnlyHint) expect(tool.annotations.destructiveHint).toBe(false);
+      if (tool.annotations?.readOnlyHint) {
+        expect(tool.annotations.destructiveHint).toBe(false);
+      }
     }
 
     for (const name of ["apply_patch", "restore", "tidy", "layout"]) {
@@ -454,16 +473,16 @@ function subscribeParams(link: string, overrides: Record<string, JsonInput> = {}
 describe("events/list", () => {
   it("advertises the catalog with schemas and webhook delivery", async () => {
     const { result } = await rpcEvents("events/list", {});
-    const names = result!.events.map((e) => e.name);
+    const names = requiredTestValue(result).events.map((e) => e.name);
     expect(names).toEqual(["diagram.changed", "diagram.renamed", "diagram.checkpointed"]);
 
-    for (const event of result!.events) {
+    for (const event of requiredTestValue(result).events) {
       expect(event.delivery).toEqual(["webhook"]);
       expect(event.inputSchema).toMatchObject({ required: ["diagram"] });
       expect(event.payloadSchema).toMatchObject({ type: "object" });
     }
 
-    const changed = result!.events[0];
+    const changed = requiredTestValue(result).events[0];
     expect(changed.description).toMatch(/edited/i);
     // Agent edits are opt-in, so the model can see the loop is closed by default.
     expect(JSON.stringify(changed.inputSchema)).toContain("include_agent");
@@ -474,12 +493,12 @@ describe("events/subscribe", () => {
   it("verifies the callback, stores the subscription and grants a TTL", async () => {
     const d = await newDiagram();
     const { result } = await rpcGrant("events/subscribe", subscribeParams(d.link));
-    expect(result!.id).toMatch(/^sub_/);
-    expect(result!.cursor).toBeNull();
-    expect(Date.parse(result!.refreshBefore)).toBeGreaterThan(Date.now());
+    expect(requiredTestValue(result).id).toMatch(/^sub_/);
+    expect(requiredTestValue(result).cursor).toBeNull();
+    expect(Date.parse(requiredTestValue(result).refreshBefore)).toBeGreaterThan(Date.now());
     // The endpoint was challenged before any event could be sent to it.
     expect(receiver.deliveries[0].body).toMatchObject({ type: "verification" });
-    const row = env.db.event_subscriptions.get(result!.id);
+    const row = env.db.event_subscriptions.get(requiredTestValue(result).id);
     expect(row).toMatchObject({ user_id: "github%3A1", event_name: "diagram.changed" });
     // The share link is the credential, so the key must not be stored.
     expect(JSON.stringify(row)).not.toContain(d.key);
@@ -497,7 +516,7 @@ describe("events/subscribe", () => {
     const d = await newDiagram();
     receiver.echoChallenge = false;
     const { error } = await rpc("events/subscribe", subscribeParams(d.link));
-    expect(error!.code).toBe(-32015);
+    expect(requiredTestValue(error).code).toBe(-32015);
     expect(env.db.event_subscriptions.size).toBe(0);
   });
   it("challenges a given principal and endpoint only once", async () => {
@@ -517,7 +536,7 @@ describe("events/subscribe", () => {
       }),
     );
 
-    expect(second.result!.id).toBe(first.result!.id);
+    expect(requiredTestValue(second.result).id).toBe(requiredTestValue(first.result).id);
     expect(env.db.event_subscriptions.size).toBe(1);
   });
   it("rejects a secret that is not a Standard Webhooks key", async () => {
@@ -531,7 +550,7 @@ describe("events/subscribe", () => {
           subscribeParams(d.link, { delivery: { mode: "webhook", url: CALLBACK, secret } }),
         );
 
-        return error!.code;
+        return requiredTestValue(error).code;
       }),
     );
 
@@ -547,7 +566,7 @@ describe("events/subscribe", () => {
       }),
     );
 
-    expect(error!.code).toBe(-32602);
+    expect(requiredTestValue(error).code).toBe(-32602);
   });
   it("refuses a diagram link the caller cannot open", async () => {
     const d = await newDiagram();
@@ -557,12 +576,12 @@ describe("events/subscribe", () => {
       subscribeParams(shareLink("https://design.example", d.id, "wrong-key")),
     );
 
-    expect(error!.code).toBe(-32012);
+    expect(requiredTestValue(error).code).toBe(-32012);
   });
   it("refuses an unknown event name", async () => {
     const d = await newDiagram();
     const { error } = await rpc("events/subscribe", subscribeParams(d.link, { name: "nope" }));
-    expect(error!.code).toBe(-32011);
+    expect(requiredTestValue(error).code).toBe(-32011);
   });
 });
 
@@ -795,18 +814,20 @@ describe("subscription validation and isolation", () => {
     const d = await newDiagram();
     const now = Date.now();
     const short = await rpcGrant("events/subscribe", subscribeParams(d.link, { ttlMs: 1 }));
-    expect(Date.parse(short.result!.refreshBefore) - now).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(Date.parse(requiredTestValue(short.result).refreshBefore) - now).toBeGreaterThanOrEqual(
+      5 * 60 * 1000,
+    );
 
     const capped = await rpcGrant(
       "events/subscribe",
       subscribeParams(d.link, { ttlMs: 30 * 86400_000 }),
     );
 
-    expect(Date.parse(capped.result!.refreshBefore) - Date.now()).toBeLessThanOrEqual(
-      7 * 86400_000,
-    );
+    expect(
+      Date.parse(requiredTestValue(capped.result).refreshBefore) - Date.now(),
+    ).toBeLessThanOrEqual(7 * 86400_000);
     const finite = await rpcGrant("events/subscribe", subscribeParams(d.link, { ttlMs: null }));
-    expect(finite.result!.refreshBefore).not.toBeNull();
+    expect(requiredTestValue(finite.result).refreshBefore).not.toBeNull();
 
     const replies = await Promise.all(
       [-1, 0, 1.5].map((ttlMs) => rpc("events/subscribe", subscribeParams(d.link, { ttlMs }))),
@@ -825,7 +846,7 @@ describe("subscription validation and isolation", () => {
       }),
     );
 
-    expect(second.result!.id).toBe(first.result!.id);
+    expect(requiredTestValue(second.result).id).toBe(requiredTestValue(first.result).id);
   });
   it("isolates subscriptions by user and consent grant", async () => {
     const d = await newDiagram();
@@ -837,7 +858,7 @@ describe("subscription validation and isolation", () => {
       testPrincipal({ authorizationId: "other-installation" }),
     );
 
-    expect(other.result!.id).not.toBe(own.result!.id);
+    expect(requiredTestValue(other.result).id).not.toBe(requiredTestValue(own.result).id);
 
     const params = {
       name: "diagram.changed",
@@ -848,8 +869,8 @@ describe("subscription validation and isolation", () => {
     await rpc("events/unsubscribe", params, testPrincipal({ userId: "someone-else" }));
     expect(env.db.event_subscriptions.size).toBe(2);
     await rpc("events/unsubscribe", params);
-    expect(env.db.event_subscriptions.has(own.result!.id)).toBe(false);
-    expect(env.db.event_subscriptions.has(other.result!.id)).toBe(true);
+    expect(env.db.event_subscriptions.has(requiredTestValue(own.result).id)).toBe(false);
+    expect(env.db.event_subscriptions.has(requiredTestValue(other.result).id)).toBe(true);
   });
   it("allows unsubscribe after the diagram capability is revoked", async () => {
     const d = await newDiagram();
@@ -895,12 +916,13 @@ describe("webhook delivery lifecycle", () => {
       }),
     );
 
-    expect(refreshed.result!.id).toBe(originalId);
+    expect(requiredTestValue(refreshed.result).id).toBe(originalId);
     await room.rename("Rotated");
     await ctx.drain();
     expect(await validSignature(receiver.events()[0], SECRET)).toBe(true);
     expect(await validSignature(receiver.events()[0], replacement)).toBe(true);
-    env.db.event_subscriptions.get(originalId)!.previous_secret_until = Date.now() - 1;
+    requiredTestValue(env.db.event_subscriptions.get(originalId)).previous_secret_until =
+      Date.now() - 1;
     await room.rename("Window closed");
     await ctx.drain();
     expect(receiver.events()[1].headers["webhook-signature"].split(" ")).toHaveLength(1);
@@ -923,7 +945,7 @@ describe("webhook delivery lifecycle", () => {
   });
   it("stops delivery after the capability key changes or the diagram is deleted", async () => {
     const { d, room, ctx } = await watched("diagram.renamed");
-    env.db.diagrams.get(d.id)!.key_hash = "rotated";
+    requiredTestValue(env.db.diagrams.get(d.id)).key_hash = "rotated";
     await room.rename("Revoked");
     await ctx.drain();
     expect(receiver.events()).toHaveLength(0);

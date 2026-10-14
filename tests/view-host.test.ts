@@ -19,8 +19,8 @@ let host: ViewHost | undefined;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mcpSpies.connect.mockResolvedValue(undefined);
-  mcpSpies.close.mockResolvedValue(undefined);
+  mcpSpies.connect.mockResolvedValue();
+  mcpSpies.close.mockResolvedValue();
   mcpSpies.callServerTool.mockResolvedValue({ content: [] });
   mcpSpies.openLink.mockResolvedValue({});
   mcpSpies.requestDisplayMode.mockResolvedValue({ mode: "fullscreen" });

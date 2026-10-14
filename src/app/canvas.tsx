@@ -165,8 +165,11 @@ const blobToBase64 = (b: Blob) =>
     r.addEventListener("load", () => {
       const result = z.string().safeParse(r.result);
 
-      if (result.success) resolve(result.data.split(",")[1]);
-      else reject(new Error("Expected a data URL from FileReader"));
+      if (result.success) {
+        resolve(result.data.split(",")[1]);
+      } else {
+        reject(new Error("Expected a data URL from FileReader"));
+      }
     });
     r.addEventListener("error", () => reject(r.error));
     r.readAsDataURL(b);
@@ -179,7 +182,9 @@ export function Canvas({ id, k }: CanvasProps) {
   const [peers, setPeers] = useState(1);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    if (loaded) document.title = `${name} · System Design`;
+    if (loaded) {
+      document.title = `${name} · System Design`;
+    }
   }, [loaded, name]);
   // The heart has no Excalidraw equivalent; the plain "point" gesture is drawn as the
   // agent's collaborator cursor instead.
@@ -187,7 +192,9 @@ export function Canvas({ id, k }: CanvasProps) {
   const gestureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
-      if (gestureTimer.current) clearTimeout(gestureTimer.current);
+      if (gestureTimer.current) {
+        clearTimeout(gestureTimer.current);
+      }
     },
     [],
   );
@@ -214,15 +221,19 @@ export function Canvas({ id, k }: CanvasProps) {
     };
   }, [api]);
   useEffect(() => {
-    if (!embeddedOrigin || !api) return undefined;
+    if (!embeddedOrigin || !api) {
+      return;
+    }
 
     const receiveTheme = (event: MessageEvent<unknown>) => {
       if (
         event.source !== window.parent ||
         event.origin !== embeddedOrigin ||
         !isEmbeddedHostMessage(event.data)
-      )
+      ) {
         return;
+      }
+
       api.updateScene({ appState: { theme: event.data.theme } });
     };
 
@@ -233,15 +244,19 @@ export function Canvas({ id, k }: CanvasProps) {
   }, [api, embeddedOrigin]);
 
   const openAllDiagrams = () => {
-    if (embeddedOrigin)
+    if (embeddedOrigin) {
       window.parent.postMessage({ type: "system-design.library" }, embeddedOrigin);
-    else location.assign("/");
+    } else {
+      location.assign("/");
+    }
   };
 
   const attachSelection = () => {
     const current = apiRef.current;
 
-    if (!embeddedOrigin || !current) return;
+    if (!embeddedOrigin || !current) {
+      return;
+    }
 
     const selectedElementIds = Object.keys(current.getAppState().selectedElementIds).filter(
       (elementId) => current.getAppState().selectedElementIds[elementId],
@@ -258,7 +273,10 @@ export function Canvas({ id, k }: CanvasProps) {
   const loadLibrary = async () => {
     const currentApi = apiRef.current;
 
-    if (!currentApi || libraryRequested.current) return;
+    if (!currentApi || libraryRequested.current) {
+      return;
+    }
+
     libraryRequested.current = true;
 
     try {
@@ -283,20 +301,29 @@ export function Canvas({ id, k }: CanvasProps) {
   const setCollaborator = useCallback((peer: SocketId, patch: Partial<Collaborator> | null) => {
     const map = collaborators.current;
 
-    if (patch) map.set(peer, { ...map.get(peer), id: peer, socketId: peer, ...patch });
-    else map.delete(peer);
+    if (patch) {
+      map.set(peer, { ...map.get(peer), id: peer, socketId: peer, ...patch });
+    } else {
+      map.delete(peer);
+    }
+
     apiRef.current?.updateScene({ collaborators: new Map(map) });
   }, []);
 
   const send = useCallback((m: ClientMessage) => {
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(m));
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify(m));
+    }
   }, []);
 
   const sendPresence = useCallback(
     (force = false) => {
       const a = apiRef.current;
 
-      if (!a) return;
+      if (!a) {
+        return;
+      }
+
       const st = a.getAppState();
 
       const selection = Object.keys(st.selectedElementIds).filter(
@@ -315,7 +342,10 @@ export function Canvas({ id, k }: CanvasProps) {
       const username = displayName() || undefined;
       const sig = JSON.stringify([selection, focused, username]);
 
-      if (!force && sig === lastPresence.current) return;
+      if (!force && sig === lastPresence.current) {
+        return;
+      }
+
       lastPresence.current = sig;
       send({ type: "presence", selection, viewport, focused, username });
     },
@@ -330,7 +360,10 @@ export function Canvas({ id, k }: CanvasProps) {
     ) => {
       const a = apiRef.current;
 
-      if (!a || !targets.length) return false;
+      if (!a || !targets.length) {
+        return false;
+      }
+
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const groups = new Set(targets.flatMap((e) => e.groupIds));
       const ids = new Set(targets.map((e) => e.id));
@@ -342,8 +375,10 @@ export function Canvas({ id, k }: CanvasProps) {
           .filter((e) => !ids.has(e.id) && e.groupIds.some((groupId) => groups.has(groupId))),
       ];
 
-      if (mode === "focus")
+      if (mode === "focus") {
         a.setViewport({ target: elements, fit: "scale-down", animation: false });
+      }
+
       // Wait for the viewport change to be applied before positioning the temporary pointer.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const state = a.getAppState();
@@ -362,12 +397,16 @@ export function Canvas({ id, k }: CanvasProps) {
         screen.y >= state.offsetTop &&
         screen.y <= state.offsetTop + state.height;
 
-      if (gestureTimer.current) clearTimeout(gestureTimer.current);
+      if (gestureTimer.current) {
+        clearTimeout(gestureTimer.current);
+      }
 
       if (gesture === "heart") {
         setHeart(visible ? { ...screen, startedAt: performance.now() } : null);
 
-        if (visible) gestureTimer.current = setTimeout(() => setHeart(null), 2400);
+        if (visible) {
+          gestureTimer.current = setTimeout(() => setHeart(null), 2400);
+        }
       } else {
         setCollaborator(AGENT, {
           username: "Agent",
@@ -389,7 +428,9 @@ export function Canvas({ id, k }: CanvasProps) {
       const a = apiRef.current;
 
       try {
-        if (!a) throw new Error("canvas not ready");
+        if (!a) {
+          throw new Error("canvas not ready");
+        }
 
         if (msg.method === "screenshot") {
           const { elementIds } = msg.params;
@@ -405,7 +446,9 @@ export function Canvas({ id, k }: CanvasProps) {
             );
           }
 
-          if (!elements.length) throw new Error("nothing to render");
+          if (!elements.length) {
+            throw new Error("nothing to render");
+          }
 
           const blob = await exportToBlob({
             elements,
@@ -432,7 +475,10 @@ export function Canvas({ id, k }: CanvasProps) {
           const ids = new Set(elementIds);
           const elements = a.getSceneElements().filter((e) => ids.has(e.id));
 
-          if (!elements.length) throw new Error("Target no longer exists in this tab");
+          if (!elements.length) {
+            throw new Error("Target no longer exists in this tab");
+          }
+
           const visible = await showFocus(elements, mode, gesture);
           send({
             type: "rpc_result",
@@ -447,7 +493,10 @@ export function Canvas({ id, k }: CanvasProps) {
 
           // Diagram types Excalidraw can't draw natively come back as an image; keep its bytes
           // here so this tab uploads them once the room adds the element.
-          if (files) apiRef.current?.addFiles(Object.values(files));
+          if (files) {
+            apiRef.current?.addFiles(Object.values(files));
+          }
+
           const converted = convertToExcalidrawElements(elements, { regenerateIds: true });
           send({ type: "rpc_result", reqId: msg.reqId, ok: true, data: { elements: converted } });
         }
@@ -466,7 +515,10 @@ export function Canvas({ id, k }: CanvasProps) {
     maxEnqueuedMessages: 0,
     shouldReconnectOnClose: (event) => event.code !== 1008, // 1008: diagram deleted
     onOpen: () => {
-      if (offline.current) api?.setToast(null);
+      if (offline.current) {
+        api?.setToast(null);
+      }
+
       offline.current = false;
       sendPresence(true);
     },
@@ -475,12 +527,18 @@ export function Canvas({ id, k }: CanvasProps) {
       collaborators.current.clear();
       api?.updateScene({ collaborators: new Map() });
 
-      if (event.code === 1008 || offline.current) return;
+      if (event.code === 1008 || offline.current) {
+        return;
+      }
+
       offline.current = true;
       api?.setToast({ message: "Offline, reconnecting…", duration: Infinity });
     },
     onMessage: (ev) => {
-      if (!api) return;
+      if (!api) {
+        return;
+      }
+
       const msg: ServerMessage = serverMessageSchema.parse(JSON.parse(ev.data));
 
       if (msg.type === "init") {
@@ -490,18 +548,23 @@ export function Canvas({ id, k }: CanvasProps) {
         const local = api.getSceneElementsIncludingDeleted();
         const merged = local.length ? reconcileElements(local, remote, api.getAppState()) : remote;
 
-        for (const e of msg.elements) synced.current.set(e.id, e.version);
+        for (const e of msg.elements) {
+          synced.current.set(e.id, e.version);
+        }
+
         api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         fetchFiles();
 
         // Fitting an empty board would zoom to Excalidraw's 3000% maximum.
-        if (!local.length && msg.elements.some((e) => !e.isDeleted))
+        if (!local.length && msg.elements.some((e) => !e.isDeleted)) {
           api.setViewport({
             target: api.getSceneElements(),
             fit: "contain",
             animation: false,
             offsets: { ui: { padding: 48 } },
           });
+        }
+
         setLoaded(true);
         // Push anything drawn while offline.
         scheduleSend();
@@ -516,8 +579,10 @@ export function Canvas({ id, k }: CanvasProps) {
           api.getAppState(),
         );
 
-        for (const e of msg.elements)
+        for (const e of msg.elements) {
           synced.current.set(e.id, Math.max(e.version, synced.current.get(e.id) ?? 0));
+        }
+
         api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         fetchFiles();
 
@@ -596,13 +661,18 @@ export function Canvas({ id, k }: CanvasProps) {
     pendingSend.current = null;
     const a = apiRef.current;
 
-    if (!a || ws.current?.readyState !== WebSocket.OPEN) return;
+    if (!a || ws.current?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
     uploadFiles();
     const changed: El[] = [];
 
     for (const e of a.getSceneElementsIncludingDeleted()) {
       // A click with a drawing tool leaves a zero-size element; send it once it has a size.
-      if (!e.isDeleted && isInvisiblySmallElement(e)) continue;
+      if (!e.isDeleted && isInvisiblySmallElement(e)) {
+        continue;
+      }
 
       if (e.version > (synced.current.get(e.id) ?? 0)) {
         changed.push(e);
@@ -610,7 +680,9 @@ export function Canvas({ id, k }: CanvasProps) {
       }
     }
 
-    if (changed.length) send({ type: "update", elements: changed });
+    if (changed.length) {
+      send({ type: "update", elements: changed });
+    }
   };
 
   // ---------- image files ----------
@@ -623,13 +695,19 @@ export function Canvas({ id, k }: CanvasProps) {
   const setImageStatus = (fileId: string, status: "saved" | "error") => {
     const a = apiRef.current;
 
-    if (!a) return;
+    if (!a) {
+      return;
+    }
+
     const els = a.getSceneElementsIncludingDeleted();
 
     const stale = (e: ExcalidrawElement): e is ExcalidrawImageElement =>
       e.type === "image" && e.fileId === fileId && e.status !== status;
 
-    if (!els.some(stale)) return;
+    if (!els.some(stale)) {
+      return;
+    }
+
     a.updateScene({
       elements: els.map((e) => (stale(e) ? newElementWith(e, { status }) : e)),
       captureUpdate: CaptureUpdateAction.NEVER,
@@ -639,15 +717,24 @@ export function Canvas({ id, k }: CanvasProps) {
   const uploadFiles = () => {
     const a = apiRef.current;
 
-    if (!a) return;
+    if (!a) {
+      return;
+    }
+
     const have = a.getFiles();
 
     for (const e of a.getSceneElementsIncludingDeleted()) {
-      if (e.type !== "image" || e.isDeleted || !e.fileId) continue;
+      if (e.type !== "image" || e.isDeleted || !e.fileId) {
+        continue;
+      }
+
       const fileId = e.fileId;
       const file = have[fileId];
 
-      if (!file || uploadedFiles.current.has(fileId)) continue;
+      if (!file || uploadedFiles.current.has(fileId)) {
+        continue;
+      }
+
       uploadedFiles.current.add(fileId);
       void (async () => {
         try {
@@ -659,7 +746,9 @@ export function Canvas({ id, k }: CanvasProps) {
             body,
           });
 
-          if (res.ok) return setImageStatus(fileId, "saved");
+          if (res.ok) {
+            return setImageStatus(fileId, "saved");
+          }
 
           // The room refused the file (too large, not an image); retrying won't help.
           if (res.status === 413 || res.status === 415) {
@@ -684,22 +773,39 @@ export function Canvas({ id, k }: CanvasProps) {
   const fetchFiles = () => {
     const a = apiRef.current;
 
-    if (!a) return;
+    if (!a) {
+      return;
+    }
+
     const have = a.getFiles();
     const missing = new Set<FileId>();
 
-    for (const e of a.getSceneElementsIncludingDeleted())
-      if (e.type === "image" && !e.isDeleted && e.fileId && e.status === "saved" && !have[e.fileId])
+    for (const e of a.getSceneElementsIncludingDeleted()) {
+      if (
+        e.type === "image" &&
+        !e.isDeleted &&
+        e.fileId &&
+        e.status === "saved" &&
+        !have[e.fileId]
+      ) {
         missing.add(e.fileId);
+      }
+    }
 
     for (const fileId of missing) {
-      if (fetchingFiles.current.has(fileId)) continue;
+      if (fetchingFiles.current.has(fileId)) {
+        continue;
+      }
+
       fetchingFiles.current.add(fileId);
       void (async () => {
         try {
           const res = await fetch(fileUrl(fileId));
 
-          if (!res.ok) throw new Error(`file ${fileId}: ${res.status}`);
+          if (!res.ok) {
+            throw new Error(`file ${fileId}: ${res.status}`);
+          }
+
           const blob = await res.blob();
 
           const dataURL = await new Promise<string>((resolve, reject) => {
@@ -707,8 +813,11 @@ export function Canvas({ id, k }: CanvasProps) {
             reader.addEventListener("load", () => {
               const result = z.string().safeParse(reader.result);
 
-              if (result.success) resolve(result.data);
-              else reject(new Error("Expected a data URL from FileReader"));
+              if (result.success) {
+                resolve(result.data);
+              } else {
+                reject(new Error("Expected a data URL from FileReader"));
+              }
             });
             reader.addEventListener("error", () => reject(reader.error));
             reader.readAsDataURL(blob);
@@ -735,7 +844,9 @@ export function Canvas({ id, k }: CanvasProps) {
   };
 
   const scheduleSend = () => {
-    if (pendingSend.current === null) pendingSend.current = window.setTimeout(flush, 60);
+    if (pendingSend.current === null) {
+      pendingSend.current = window.setTimeout(flush, 60);
+    }
   };
 
   useEffect(() => {
@@ -830,7 +941,10 @@ export function Canvas({ id, k }: CanvasProps) {
         onPointerUpdate={({ pointer, button }) => {
           const now = performance.now();
 
-          if (now - lastPointer.current < 40) return;
+          if (now - lastPointer.current < 40) {
+            return;
+          }
+
           lastPointer.current = now;
           send({
             type: "pointer",
@@ -941,6 +1055,7 @@ export function Canvas({ id, k }: CanvasProps) {
               {name} ✎
             </Sidebar.Trigger>
             <button
+              type="button"
               className="sidebar-trigger"
               onClick={tidy}
               title="Fix overlaps, alignment and frames; only the selected frames when something is selected (undo via Versions)"
@@ -968,7 +1083,9 @@ export function Canvas({ id, k }: CanvasProps) {
         </Sidebar>
         <DefaultSidebar
           onStateChange={(state) => {
-            if (state && (state.tab ?? "library") === "library") void loadLibrary();
+            if (state && (state.tab ?? "library") === "library") {
+              void loadLibrary();
+            }
           }}
         >
           <DefaultSidebar.TabTriggers>
@@ -1000,7 +1117,9 @@ function SharePanel({ link, copy, onName }: SharePanelProps) {
       <p className="muted">Edit link: anyone with it can edit (give it to your interviewer).</p>
       <div className="row">
         <code className="cmd">{link}</code>
-        <button onClick={() => copy(link, "Link")}>Copy</button>
+        <button type="button" onClick={() => copy(link, "Link")}>
+          Copy
+        </button>
       </div>
       <label htmlFor="display-name">Your name (shown on your cursor)</label>
       <input
@@ -1021,7 +1140,10 @@ function SharePanel({ link, copy, onName }: SharePanelProps) {
       <p className="muted">Then tell the agent:</p>
       <div className="row">
         <code className="cmd">join {link}</code>
-        <button onClick={() => copy(`Join my system design canvas: ${link}`, "Prompt")}>
+        <button
+          type="button"
+          onClick={() => copy(`Join my system design canvas: ${link}`, "Prompt")}
+        >
           Copy
         </button>
       </div>
@@ -1049,7 +1171,10 @@ function RenamePanel({ name, id, diagramKey, onRenamed }: RenamePanelProps) {
       onSubmit={async (event) => {
         event.preventDefault();
 
-        if (!draft.trim() || busy) return;
+        if (!draft.trim() || busy) {
+          return;
+        }
+
         setBusy(true);
         setError("");
 
@@ -1062,10 +1187,12 @@ function RenamePanel({ name, id, diagramKey, onRenamed }: RenamePanelProps) {
 
           const body: unknown = await response.json();
 
-          if (!response.ok)
+          if (!response.ok) {
             throw new Error(
               apiErrorMessage(isApiFailure(body) ? body : {}, "Could not rename the diagram."),
             );
+          }
+
           onRenamed(renameResultSchema.parse(body).name);
         } catch (err) {
           setError(errorMessage(err));
@@ -1158,10 +1285,11 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
 
       const result: unknown = await response.json();
 
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           apiErrorMessage(isApiFailure(result) ? result : {}, "Could not save this change."),
         );
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
     onError: (error) => flash(error.message),
@@ -1185,7 +1313,10 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
         onSubmit={async (e) => {
           e.preventDefault();
 
-          if (!(await post("/snapshots", { name: label || "checkpoint" }))) return;
+          if (!(await post("/snapshots", { name: label || "checkpoint" }))) {
+            return;
+          }
+
           setLabel("");
           flash("Saved version");
         }}
@@ -1195,7 +1326,9 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
-        <button disabled={mutation.isPending}>Save</button>
+        <button type="submit" disabled={mutation.isPending}>
+          Save
+        </button>
       </form>
       <form
         className="row"
@@ -1203,19 +1336,28 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
           e.preventDefault();
           const field = e.currentTarget.elements.namedItem("tpl");
 
-          if (!(field instanceof HTMLInputElement))
+          if (!(field instanceof HTMLInputElement)) {
             throw new Error("Template name field is missing");
+          }
+
           const input = field.value.trim();
 
-          if (!input) return;
+          if (!input) {
+            return;
+          }
 
-          if (!(await post("/template", { name: input }))) return;
+          if (!(await post("/template", { name: input }))) {
+            return;
+          }
+
           flash("Saved as template");
           field.value = "";
         }}
       >
         <input name="tpl" placeholder="Save as template…" />
-        <button disabled={mutation.isPending}>Save</button>
+        <button type="submit" disabled={mutation.isPending}>
+          Save
+        </button>
       </form>
       <ul className="list snaps">
         {snapshots.isLoading && <li className="muted">Loading…</li>}
@@ -1233,9 +1375,13 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
               </span>
             </span>
             <button
+              type="button"
               disabled={mutation.isPending}
               onClick={async () => {
-                if (!(await post("/restore", { snapshotId: s.id }))) return;
+                if (!(await post("/restore", { snapshotId: s.id }))) {
+                  return;
+                }
+
                 flash(`Restored "${s.name}"`);
               }}
             >

@@ -28,8 +28,9 @@ describe("Extensions canvas embedding boundary", () => {
       `${ORIGIN}/api/diagrams`,
       `${ORIGIN}/d/board123`,
       `https://user:pass@design.example/d/board123?k=key`,
-    ])
+    ]) {
       expect(() => embeddedCanvasUrl(link, ORIGIN, HOST)).toThrow("share link");
+    }
   });
 
   it("accepts exact HTTP(S) parent origins and rejects paths, credentials, and opaque origins", () => {
@@ -41,8 +42,10 @@ describe("Extensions canvas embedding boundary", () => {
       "javascript:alert(1)",
       "https://widget.example/path",
       "https://user@widget.example",
-    ])
+    ]) {
       expect(embeddedHostOrigin(`?host_origin=${encodeURIComponent(origin)}`)).toBeUndefined();
+    }
+
     expect(embeddedHostOrigin("")).toBeUndefined();
   });
 

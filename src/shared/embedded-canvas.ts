@@ -19,13 +19,16 @@ export type EmbeddedHostMessage = { type: "system-design.theme"; theme: "light" 
 export function embeddedHostOrigin(search: string): string | undefined {
   const value = new URLSearchParams(search).get("host_origin");
 
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
 
   try {
     const url = new URL(value);
 
-    if ((url.protocol === "https:" || url.protocol === "http:") && url.origin === value)
+    if ((url.protocol === "https:" || url.protocol === "http:") && url.origin === value) {
       return value;
+    }
   } catch {
     // Invalid embedding configuration behaves like a regular browser canvas.
   }
@@ -44,8 +47,10 @@ export function embeddedCanvasUrl(diagram: string, origin: string, hostOrigin: s
     !/^\/d\/[A-Za-z0-9_-]{8,64}$/.test(url.pathname) ||
     !/^[A-Za-z0-9_-]+$/.test(url.searchParams.get("k") ?? "") ||
     !embeddedHostOrigin(new URLSearchParams({ host_origin: hostOrigin }).toString())
-  )
+  ) {
     throw new Error("Use a diagram share link from this deployment.");
+  }
+
   url.hash = "";
   url.searchParams.set("host_origin", hostOrigin);
 

@@ -36,11 +36,13 @@ export async function handleMcp(request: Request, env: Env, principal: McpPrinci
   try {
     await takeBudget(env, `mcp:${principal.userId}`, 120);
   } catch (error) {
-    if (error instanceof HTTPException)
+    if (error instanceof HTTPException) {
       return Response.json(
         { error: error.message },
         { status: error.status, headers: { "Retry-After": "60" } },
       );
+    }
+
     throw error;
   }
 
@@ -145,7 +147,7 @@ const opSchema = z.discriminatedUnion("op", [
       .string()
       .optional()
       .describe("required unless kind is given; e.g. kind=sql_db, label='Orders DB'"),
-    "shape": z
+    shape: z
       .enum(GEOMETRIES)
       .optional()
       .describe("rectangle (default: services), ellipse (datastores/clients), diamond (decisions)"),
@@ -172,7 +174,7 @@ const opSchema = z.discriminatedUnion("op", [
     label: z.string().optional().describe("new label (frame name / note text for those types)"),
     color: color.optional(),
     text_color: textColor.optional(),
-    "shape": z.enum(GEOMETRIES).optional(),
+    shape: z.enum(GEOMETRIES).optional(),
     dashed: z.boolean().optional(),
     width: z.number().optional(),
     height: z.number().optional(),
@@ -245,10 +247,15 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
   async function pick(link: string) {
     const parsed = parseLink(link);
 
-    if (!parsed) throw new Error("`diagram` must be the share link, e.g. https://…/d/<id>?k=<key>");
+    if (!parsed) {
+      throw new Error("`diagram` must be the share link, e.g. https://…/d/<id>?k=<key>");
+    }
+
     const row = await verifyKey(env, parsed.id, parsed.key);
 
-    if (!row) throw new Error("invalid or revoked diagram link");
+    if (!row) {
+      throw new Error("invalid or revoked diagram link");
+    }
 
     return row;
   }
@@ -423,7 +430,10 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
   async function library(cursor?: string) {
     const boundary = cursor ? parseDiagramCursor(cursor) : undefined;
 
-    if (cursor && !boundary) throw new Error("Invalid diagram library cursor.");
+    if (cursor && !boundary) {
+      throw new Error("Invalid diagram library cursor.");
+    }
+
     const page = await listDiagrams(env, 50, boundary ?? undefined, principal.userId);
 
     return {
@@ -835,10 +845,10 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
           uri: uri.href,
           mimeType: "application/json",
           text: JSON.stringify(
-            COMPONENTS.map(({ kind, label, "shape": geometry, group, icon }) => ({
+            COMPONENTS.map(({ kind, label, geometry, group, icon }) => ({
               kind,
               label,
-              "shape": geometry,
+              shape: geometry,
               group,
               icon,
             })),

@@ -39,7 +39,10 @@ export function createViewHost(
   function applyDeepLink(callbacks: ViewHostCallbacks) {
     const deepLink = deepLinkUrl(app.getHostContext());
 
-    if (!deepLink || deepLink === lastDeepLink) return;
+    if (!deepLink || deepLink === lastDeepLink) {
+      return;
+    }
+
     lastDeepLink = deepLink;
 
     try {
@@ -47,7 +50,9 @@ export function createViewHost(
         "diagram",
       );
 
-      if (diagram) callbacks.onDiagram(diagram);
+      if (diagram) {
+        callbacks.onDiagram(diagram);
+      }
     } catch {
       // Ignore malformed host navigation without interrupting the shared bridge.
     }
@@ -58,7 +63,9 @@ export function createViewHost(
       app.ontoolinput = ({ arguments: args }) => {
         const diagram = z.string().safeParse(args?.diagram);
 
-        if (diagram.success) callbacks.onDiagram(diagram.data);
+        if (diagram.success) {
+          callbacks.onDiagram(diagram.data);
+        }
       };
 
       app.onhostcontextchanged = (context) => {
@@ -69,7 +76,10 @@ export function createViewHost(
       await app.connect();
       const context = app.getHostContext();
 
-      if (context) callbacks.onContext(context);
+      if (context) {
+        callbacks.onContext(context);
+      }
+
       applyDeepLink(callbacks);
     },
     dispose() {

@@ -13,6 +13,7 @@ export function CopyRow({ label, text }: CopyRowProps) {
       {label && <span className="copy-label">{label}</span>}
       <code className="cmd">{text}</code>
       <button
+        type="button"
         onClick={() => {
           void navigator.clipboard.writeText(text);
           setCopied(true);

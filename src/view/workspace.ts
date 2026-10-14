@@ -29,12 +29,14 @@ const app = new App(
 
 const origin = document.querySelector<HTMLMetaElement>('meta[name="canvas-origin"]')!.content;
 
-type ElementConstructor<T extends HTMLElement> = { new (): T };
+type ElementConstructor<T extends HTMLElement> = new () => T;
 
 function requiredElement<T extends HTMLElement>(id: string, ctor: ElementConstructor<T>): T {
-  const node = document.getElementById(id);
+  const node = document.querySelector(`#${id}`);
 
-  if (!(node instanceof ctor)) throw new Error(`Missing ${id} element`);
+  if (!(node instanceof ctor)) {
+    throw new Error(`Missing ${id} element`);
+  }
 
   return node;
 }
@@ -43,9 +45,9 @@ const select = requiredElement("diagrams", HTMLSelectElement);
 
 const frame = requiredElement("canvas", HTMLIFrameElement);
 
-const empty = document.getElementById("empty")!;
+const empty = requiredElement("empty", HTMLElement);
 
-const status = document.getElementById("status")!;
+const status = document.querySelector("#status")!;
 
 const refresh = requiredElement("refresh", HTMLButtonElement);
 
@@ -88,8 +90,11 @@ async function publishContext(selectedElementIds: string[] = []) {
     structuredContent: { diagram: activeDiagram ?? null, selectedElementIds },
   };
 
-  if (app.getHostCapabilities()?.updateModelContext) await app.updateModelContext(params);
-  else return false;
+  if (app.getHostCapabilities()?.updateModelContext) {
+    await app.updateModelContext(params);
+  } else {
+    return false;
+  }
 
   return true;
 }
@@ -111,11 +116,16 @@ function openDiagram(diagram: string, name?: string) {
   select.value = diagram;
   status.textContent = "Canvas open. Edits sync with your browser and ChatGPT.";
 
-  if (connected) void publishContext().catch(errorMessage);
+  if (connected) {
+    void publishContext().catch(errorMessage);
+  }
 }
 
 function addDiagram(option: DiagramOption) {
-  if (Array.from(select.options).some((existing) => existing.value === option.diagram)) return;
+  if (Array.from(select.options).some((existing) => existing.value === option.diagram)) {
+    return;
+  }
+
   const node = document.createElement("option");
   node.value = option.diagram;
   node.textContent = option.name;
@@ -123,26 +133,39 @@ function addDiagram(option: DiagramOption) {
 }
 
 function receiveLibrary(result: WorkspaceResult, append = false) {
-  if (result.isError) throw new Error("Could not load your diagrams.");
+  if (result.isError) {
+    throw new TypeError("Could not load your diagrams.");
+  }
+
   const parsed = libraryPageSchema.safeParse(result.structuredContent);
 
-  if (!parsed.success) throw new Error("The server returned an invalid diagram library.");
+  if (!parsed.success) {
+    throw new Error("The server returned an invalid diagram library.");
+  }
+
   const page = parsed.data;
 
-  if (!append) select.replaceChildren(new Option("Choose a diagram", ""));
+  if (!append) {
+    select.replaceChildren(new Option("Choose a diagram", ""));
+  }
 
-  for (const diagram of page.diagrams) addDiagram(diagram);
+  for (const diagram of page.diagrams) {
+    addDiagram(diagram);
+  }
+
   cursor = page.nextCursor;
   more.hidden = !cursor;
 
-  if (page.activeDiagram) openDiagram(page.activeDiagram, page.activeName);
-  else if (activeDiagram) {
+  if (page.activeDiagram) {
+    openDiagram(page.activeDiagram, page.activeName);
+  } else if (activeDiagram) {
     addDiagram({ diagram: activeDiagram, name: activeName });
     select.value = activeDiagram;
-  } else
+  } else {
     status.textContent = page.diagrams.length
       ? "Choose a diagram to start."
       : "Your library is empty.";
+  }
 }
 
 async function loadLibrary(append = false) {
@@ -170,15 +193,22 @@ async function joinDiagram(diagram: string) {
   const version = ++navigationVersion;
   const result = await app.callServerTool({ name: "join_session", arguments: { diagram } });
 
-  if (version !== navigationVersion) return;
+  if (version !== navigationVersion) {
+    return;
+  }
 
-  if (result.isError)
-    throw new Error(
+  if (result.isError) {
+    throw new TypeError(
       result.content.find((item) => item.type === "text")?.text ?? "Could not join the diagram.",
     );
+  }
+
   const parsed = joinedSceneSchema.safeParse(result.structuredContent);
 
-  if (!parsed.success) throw new Error("The server returned an invalid diagram.");
+  if (!parsed.success) {
+    throw new Error("The server returned an invalid diagram.");
+  }
+
   const data = parsed.data;
   addDiagram({ name: data.diagram, diagram });
   openDiagram(diagram);
@@ -187,20 +217,28 @@ async function joinDiagram(diagram: string) {
 function applyDeepLink() {
   const link = deepLinkUrl(app.getHostContext());
 
-  if (!link || link === lastDeepLink) return;
+  if (!link || link === lastDeepLink) {
+    return;
+  }
+
   lastDeepLink = link;
 
   try {
     const diagram = new URL(link, origin).searchParams.get("diagram");
 
-    if (diagram) void joinDiagram(diagram).catch(errorMessage);
+    if (diagram) {
+      void joinDiagram(diagram).catch(errorMessage);
+    }
   } catch (error) {
     errorMessage(error);
   }
 }
 
 function sendTheme() {
-  if (!editorReady) return;
+  if (!editorReady) {
+    return;
+  }
+
   frame.contentWindow?.postMessage({ type: "system-design.theme", theme }, origin);
 }
 
@@ -213,9 +251,13 @@ function applyContext(context: McpUiHostContext) {
     sendTheme();
   }
 
-  if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
+  if (context.styles?.variables) {
+    applyHostStyleVariables(context.styles.variables);
+  }
 
-  if (connected) applyDeepLink();
+  if (connected) {
+    applyDeepLink();
+  }
 }
 
 app.ontoolresult = (result) => {
@@ -257,7 +299,7 @@ function showLibrary() {
 
 library.addEventListener("click", showLibrary);
 
-document.getElementById("join")!.addEventListener("submit", (event) => {
+document.querySelector("#join")!.addEventListener("submit", (event) => {
   event.preventDefault();
   void joinDiagram(input.value.trim()).catch(errorMessage);
 });
@@ -268,23 +310,26 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     event.source !== frame.contentWindow ||
     event.origin !== origin ||
     !isEmbeddedCanvasMessage(event.data)
-  )
+  ) {
     return;
+  }
 
-  if (event.data.type === "system-design.library") showLibrary();
-  else if (event.data.type === "system-design.ready") {
+  if (event.data.type === "system-design.library") {
+    showLibrary();
+  } else if (event.data.type === "system-design.ready") {
     editorReady = true;
     sendTheme();
-  } else
+  } else {
     void publishContext(event.data.selectedElementIds)
       .then((attached) => {
         status.textContent = attached
           ? "Selection attached to chat."
           : "Open a conversation panel to attach a selection.";
 
-        return undefined;
+        return;
       })
       .catch(errorMessage);
+  }
 });
 
 window.addEventListener("pagehide", () => void app.close());
@@ -294,15 +339,21 @@ async function start() {
   connected = true;
   const context = app.getHostContext();
 
-  if (context) applyContext(context);
+  if (context) {
+    applyContext(context);
+  }
 
   if (
     context?.displayMode !== "fullscreen" &&
     context?.availableDisplayModes?.includes("fullscreen")
-  )
+  ) {
     await app.requestDisplayMode({ mode: "fullscreen" });
+  }
 
-  if (activeDiagram) await publishContext();
+  if (activeDiagram) {
+    await publishContext();
+  }
+
   applyDeepLink();
 }
 

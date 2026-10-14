@@ -19,24 +19,28 @@ interface SceneData {
 
 const POLL_MS = 4000;
 
-const byId = (id: string) => document.getElementById(id)!;
+const byId = (id: string) => document.querySelector(`#${id}`)!;
 
 const title = byId("title");
 
 const status = byId("status");
 
 function requireSvg(id: string): SVGSVGElement {
-  const element = document.getElementById(id);
+  const element = document.querySelector(`#${id}`);
 
-  if (!(element instanceof SVGSVGElement)) throw new Error(`Missing SVG: ${id}`);
+  if (!(element instanceof SVGSVGElement)) {
+    throw new Error(`Missing SVG: ${id}`);
+  }
 
   return element;
 }
 
 function requireButton(id: string): HTMLButtonElement {
-  const element = document.getElementById(id);
+  const element = document.querySelector(`#${id}`);
 
-  if (!(element instanceof HTMLButtonElement)) throw new Error(`Missing button: ${id}`);
+  if (!(element instanceof HTMLButtonElement)) {
+    throw new Error(`Missing button: ${id}`);
+  }
 
   return element;
 }
@@ -66,7 +70,10 @@ let requestVersion = 0;
 let pendingDiagram: string | undefined;
 
 async function load() {
-  if (!diagram || pendingDiagram === diagram) return;
+  if (!diagram || pendingDiagram === diagram) {
+    return;
+  }
+
   const request = ++requestVersion;
   const requestedDiagram = diagram;
   pendingDiagram = diagram;
@@ -75,9 +82,14 @@ async function load() {
   try {
     const res = await host.callTool("render_scene", { diagram: requestedDiagram });
 
-    if (request !== requestVersion) return;
+    if (request !== requestVersion) {
+      return;
+    }
 
-    if (res.isError) throw new Error(res.content?.find((c) => c.type === "text")?.text ?? "error");
+    if (res.isError) {
+      throw new TypeError(res.content?.find((c) => c.type === "text")?.text ?? "error");
+    }
+
     data = sceneDataSchema.parse(res.structuredContent);
     const sig = data.elements.map((e) => `${e.id}:${e.version}`).join(",");
 
@@ -93,8 +105,9 @@ async function load() {
       ? `${nodes} shapes · updated ${new Date().toLocaleTimeString([], { timeStyle: "short" })}`
       : "The canvas is empty.";
   } catch (e) {
-    if (request === requestVersion)
+    if (request === requestVersion) {
       status.textContent = `Couldn't load the diagram: ${errorMessage(e)}`;
+    }
   } finally {
     if (request === requestVersion) {
       pendingDiagram = undefined;
@@ -110,7 +123,9 @@ function setDisplayMode(mode: string) {
   // Follow the canvas live only while it has the user's full attention.
   clearInterval(poll);
 
-  if (mode === "fullscreen") poll = setInterval(() => void load(), POLL_MS);
+  if (mode === "fullscreen") {
+    poll = setInterval(() => void load(), POLL_MS);
+  }
 }
 
 function setDiagram(link: string) {
@@ -134,18 +149,26 @@ function applyContext(ctx: McpUiHostContext) {
     document.body.dataset.theme = ctx.theme;
   }
 
-  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+  if (ctx.styles?.variables) {
+    applyHostStyleVariables(ctx.styles.variables);
+  }
 
-  if (ctx.displayMode) setDisplayMode(ctx.displayMode);
+  if (ctx.displayMode) {
+    setDisplayMode(ctx.displayMode);
+  }
 
-  if (ctx.availableDisplayModes) fullBtn.hidden = !ctx.availableDisplayModes.includes("fullscreen");
+  if (ctx.availableDisplayModes) {
+    fullBtn.hidden = !ctx.availableDisplayModes.includes("fullscreen");
+  }
 }
 
 refreshBtn.addEventListener("click", () => void load());
 
 openBtn.addEventListener("click", async () => {
   try {
-    if (data) await host.openLink(data.url);
+    if (data) {
+      await host.openLink(data.url);
+    }
   } catch (error) {
     status.textContent = errorMessage(error);
   }
