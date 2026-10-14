@@ -1,15 +1,16 @@
+import { z } from "zod/mini";
 // Keep the Extensions experiment on one MCP SDK generation. Strict installation
 // checks the complete peer graph; this guard prevents the old wrapper from returning.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-type PackageManifest = {
-  dependencies: Record<string, string>;
-  devDependencies: Record<string, string>;
-  peerDependencies?: Record<string, string>;
-};
-
-const manifest: PackageManifest = JSON.parse(readFileSync("package.json", "utf8"));
+const manifest = z
+  .object({
+    dependencies: z.record(z.string(), z.string()),
+    devDependencies: z.record(z.string(), z.string()),
+    peerDependencies: z.optional(z.record(z.string(), z.string())),
+  })
+  .parse(JSON.parse(readFileSync("package.json", "utf8")));
 
 const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
 
@@ -47,4 +48,5 @@ for (const match of lock.matchAll(
   assert.ok(match[2].startsWith("2."), `Unexpected MCP generation in lockfile: ${match[0].trim()}`);
 }
 
+// eslint-disable-next-line no-console -- This CLI command reports its validation/build results to the terminal.
 console.log("Dependency check passed: MCP v2 throughout; no legacy Extensions SDK peers.");

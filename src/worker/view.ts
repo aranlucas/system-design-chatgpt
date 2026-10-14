@@ -29,6 +29,7 @@ export async function viewHtml(
     // The font is served from this worker, which the resource's CSP allows via resourceDomains.
     return html.replaceAll("__ORIGIN__", origin);
   } catch (e) {
+    // eslint-disable-next-line no-console -- Operational failure reporting must remain visible to the host error logs.
     console.error("mcp view:", e);
 
     return ERROR_HTML;

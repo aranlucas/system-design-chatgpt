@@ -61,7 +61,7 @@ describe("Extensions canvas embedding boundary", () => {
     expect(
       isEmbeddedCanvasMessage({
         type: "system-design.context",
-        selectedElementIds: Array(501).fill("node"),
+        selectedElementIds: Array.from({ length: 501 }, () => "node"),
       }),
     ).toBe(false);
     expect(isEmbeddedCanvasMessage({ type: "unknown" })).toBe(false);

@@ -1,3 +1,4 @@
+import { elementAttribute } from "../shared/element-attributes.ts";
 import { isApiFailure } from "./validation.ts";
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import { serverMessageSchema } from "../shared/schemas.ts";
@@ -171,7 +172,7 @@ const blobToBase64 = (b: Blob) =>
         reject(new Error("Expected a data URL from FileReader"));
       }
     });
-    r.addEventListener("error", () => reject(r.error));
+    r.addEventListener("error", () => reject(r.error ?? new Error("Failed to read image")));
     r.readAsDataURL(b);
   });
 
@@ -221,26 +222,28 @@ export function Canvas({ id, k }: CanvasProps) {
     };
   }, [api]);
   useEffect(() => {
-    if (!embeddedOrigin || !api) {
-      return;
+    let cleanup: (() => void) | undefined;
+
+    if (embeddedOrigin && api) {
+      const receiveTheme = (event: MessageEvent<unknown>) => {
+        if (
+          event.source !== window.parent ||
+          event.origin !== embeddedOrigin ||
+          !isEmbeddedHostMessage(event.data)
+        ) {
+          return;
+        }
+
+        api.updateScene({ appState: { theme: event.data.theme } });
+      };
+
+      window.addEventListener("message", receiveTheme);
+      window.parent.postMessage({ type: "system-design.ready" }, embeddedOrigin);
+
+      cleanup = () => window.removeEventListener("message", receiveTheme);
     }
 
-    const receiveTheme = (event: MessageEvent<unknown>) => {
-      if (
-        event.source !== window.parent ||
-        event.origin !== embeddedOrigin ||
-        !isEmbeddedHostMessage(event.data)
-      ) {
-        return;
-      }
-
-      api.updateScene({ appState: { theme: event.data.theme } });
-    };
-
-    window.addEventListener("message", receiveTheme);
-    window.parent.postMessage({ type: "system-design.ready" }, embeddedOrigin);
-
-    return () => window.removeEventListener("message", receiveTheme);
+    return cleanup;
   }, [api, embeddedOrigin]);
 
   const openAllDiagrams = () => {
@@ -364,7 +367,9 @@ export function Canvas({ id, k }: CanvasProps) {
         return false;
       }
 
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
       const groups = new Set(targets.flatMap((e) => e.groupIds));
       const ids = new Set(targets.map((e) => e.id));
 
@@ -380,7 +385,9 @@ export function Canvas({ id, k }: CanvasProps) {
       }
 
       // Wait for the viewport change to be applied before positioning the temporary pointer.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
       const state = a.getAppState();
       const [left, top, right, bottom] = getCommonBounds(elements);
       const x = (left + right) / 2;
@@ -441,8 +448,8 @@ export function Canvas({ id, k }: CanvasProps) {
             elements = elements.filter(
               (e) =>
                 want.has(e.id) ||
-                (e.frameId && want.has(e.frameId)) ||
-                ("containerId" in e && e.containerId && want.has(e.containerId)),
+                (Boolean(e.frameId) && want.has(e.frameId ?? "")) ||
+                ("containerId" in e && Boolean(e.containerId) && want.has(e.containerId ?? "")),
             );
           }
 
@@ -539,7 +546,7 @@ export function Canvas({ id, k }: CanvasProps) {
         return;
       }
 
-      const msg: ServerMessage = serverMessageSchema.parse(JSON.parse(ev.data));
+      const msg: ServerMessage = serverMessageSchema.parse(JSON.parse(z.string().parse(ev.data)));
 
       if (msg.type === "init") {
         setName(msg.name);
@@ -611,8 +618,8 @@ export function Canvas({ id, k }: CanvasProps) {
           const removed = msg.elements.filter(
             (e) =>
               e.isDeleted &&
-              !e.customData?.componentPart &&
-              !e.customData?.componentLabel &&
+              !elementAttribute(e, "customData")?.componentPart &&
+              !elementAttribute(e, "customData")?.componentLabel &&
               e.type !== "text",
           );
 
@@ -621,10 +628,10 @@ export function Canvas({ id, k }: CanvasProps) {
               ? targets
               : restoreWireElements(removed.map((e) => ({ ...e, isDeleted: false }))),
             "focus",
-          );
+          ).catch((failure) => flash(errorMessage(failure)));
         }
       } else if (msg.type === "rpc") {
-        void handleRpc(msg);
+        handleRpc(msg).catch((failure) => flash(errorMessage(failure)));
       } else if (msg.type === "peers") {
         setPeers(msg.count);
       } else if (msg.type === "collaborator") {
@@ -766,7 +773,7 @@ export function Canvas({ id, k }: CanvasProps) {
         } catch {
           uploadedFiles.current.delete(fileId); // offline: the next flush retries
         }
-      })();
+      })().catch((failure) => flash(errorMessage(failure)));
     }
   };
 
@@ -819,7 +826,9 @@ export function Canvas({ id, k }: CanvasProps) {
                 reject(new Error("Expected a data URL from FileReader"));
               }
             });
-            reader.addEventListener("error", () => reject(reader.error));
+            reader.addEventListener("error", () =>
+              reject(reader.error ?? new Error("Failed to read file")),
+            );
             reader.readAsDataURL(blob);
           });
 
@@ -834,19 +843,18 @@ export function Canvas({ id, k }: CanvasProps) {
             },
           ]);
         } catch (e) {
+          // eslint-disable-next-line no-console -- Operational failure reporting must remain visible to the host error logs.
           console.warn(e);
         } finally {
           // A failed fetch is retried on the next update from the room.
           fetchingFiles.current.delete(fileId);
         }
-      })();
+      })().catch((failure) => flash(errorMessage(failure)));
     }
   };
 
   const scheduleSend = () => {
-    if (pendingSend.current === null) {
-      pendingSend.current = window.setTimeout(flush, 60);
-    }
+    pendingSend.current ??= window.setTimeout(flush, 60);
   };
 
   useEffect(() => {
@@ -904,8 +912,10 @@ export function Canvas({ id, k }: CanvasProps) {
   const shareLink = linkFor(id, k);
 
   const copy = (text: string, what: string) => {
-    void navigator.clipboard.writeText(text);
-    flash(`${what} copied`);
+    navigator.clipboard
+      .writeText(text)
+      .then(() => flash(`${what} copied`))
+      .catch((failure) => flash(errorMessage(failure)));
   };
 
   return (
@@ -959,7 +969,13 @@ export function Canvas({ id, k }: CanvasProps) {
         <MainMenu>
           <MainMenu.Group title={name}>
             <MainMenu.Item onSelect={openRename}>Rename diagram</MainMenu.Item>
-            <MainMenu.Item onSelect={tidy}>Tidy layout</MainMenu.Item>
+            <MainMenu.Item
+              onSelect={() => {
+                tidy().catch((failure) => flash(errorMessage(failure)));
+              }}
+            >
+              Tidy layout
+            </MainMenu.Item>
             <MainMenu.Item onSelect={() => open("versions")}>Versions</MainMenu.Item>
             <MainMenu.Item onSelect={() => open("share")}>Share &amp; connect agent</MainMenu.Item>
             {embeddedOrigin && (
@@ -989,7 +1005,9 @@ export function Canvas({ id, k }: CanvasProps) {
               label: "Tidy layout",
               category: "App",
               keywords: ["overlap", "align"],
-              perform: tidy,
+              perform: () => {
+                tidy().catch((failure) => flash(errorMessage(failure)));
+              },
             },
             {
               label: "Versions",
@@ -1057,7 +1075,9 @@ export function Canvas({ id, k }: CanvasProps) {
             <button
               type="button"
               className="sidebar-trigger"
-              onClick={tidy}
+              onClick={() => {
+                tidy().catch((failure) => flash(errorMessage(failure)));
+              }}
               title="Fix overlaps, alignment and frames; only the selected frames when something is selected (undo via Versions)"
             >
               Tidy
@@ -1084,7 +1104,7 @@ export function Canvas({ id, k }: CanvasProps) {
         <DefaultSidebar
           onStateChange={(state) => {
             if (state && (state.tab ?? "library") === "library") {
-              void loadLibrary();
+              loadLibrary().catch((failure) => flash(errorMessage(failure)));
             }
           }}
         >
@@ -1168,36 +1188,41 @@ function RenamePanel({ name, id, diagramKey, onRenamed }: RenamePanelProps) {
     <form
       className="sd-panel"
       aria-label="Rename diagram"
-      onSubmit={async (event) => {
-        event.preventDefault();
+      onSubmit={(event) => {
+        (async () => {
+          event.preventDefault();
 
-        if (!draft.trim() || busy) {
-          return;
-        }
-
-        setBusy(true);
-        setError("");
-
-        try {
-          const response = await fetch(`/api/d/${id}/rename?k=${encodeURIComponent(diagramKey)}`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: draft.trim() }),
-          });
-
-          const body: unknown = await response.json();
-
-          if (!response.ok) {
-            throw new Error(
-              apiErrorMessage(isApiFailure(body) ? body : {}, "Could not rename the diagram."),
-            );
+          if (!draft.trim() || busy) {
+            return;
           }
 
-          onRenamed(renameResultSchema.parse(body).name);
-        } catch (err) {
-          setError(errorMessage(err));
-          setBusy(false);
-        }
+          setBusy(true);
+          setError("");
+
+          try {
+            const response = await fetch(
+              `/api/d/${id}/rename?k=${encodeURIComponent(diagramKey)}`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ name: draft.trim() }),
+              },
+            );
+
+            const body: unknown = await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                apiErrorMessage(isApiFailure(body) ? body : {}, "Could not rename the diagram."),
+              );
+            }
+
+            onRenamed(renameResultSchema.parse(body).name);
+          } catch (err) {
+            setError(errorMessage(err));
+            setBusy(false);
+          }
+        })().catch((failure) => setError(errorMessage(failure)));
       }}
     >
       <label htmlFor="diagram-name">Diagram name</label>
@@ -1255,7 +1280,7 @@ function tidySummary(d: TidyResult) {
     return count ? [`${count} ${word}`] : [];
   });
 
-  return parts.join(" · ") || `${d.changed} changes`;
+  return parts.join(" · ") || `${String(d.changed)} changes`;
 }
 
 type VersionPayload = { name: string } | { snapshotId: string };
@@ -1310,15 +1335,17 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
       <h3>Versions</h3>
       <form
         className="row"
-        onSubmit={async (e) => {
-          e.preventDefault();
+        onSubmit={(e) => {
+          (async () => {
+            e.preventDefault();
 
-          if (!(await post("/snapshots", { name: label || "checkpoint" }))) {
-            return;
-          }
+            if (!(await post("/snapshots", { name: label || "checkpoint" }))) {
+              return;
+            }
 
-          setLabel("");
-          flash("Saved version");
+            setLabel("");
+            flash("Saved version");
+          })().catch((failure) => flash(errorMessage(failure)));
         }}
       >
         <input
@@ -1332,26 +1359,28 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
       </form>
       <form
         className="row"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const field = e.currentTarget.elements.namedItem("tpl");
+        onSubmit={(e) => {
+          (async () => {
+            e.preventDefault();
+            const field = e.currentTarget.elements.namedItem("tpl");
 
-          if (!(field instanceof HTMLInputElement)) {
-            throw new Error("Template name field is missing");
-          }
+            if (!(field instanceof HTMLInputElement)) {
+              throw new Error("Template name field is missing");
+            }
 
-          const input = field.value.trim();
+            const input = field.value.trim();
 
-          if (!input) {
-            return;
-          }
+            if (!input) {
+              return;
+            }
 
-          if (!(await post("/template", { name: input }))) {
-            return;
-          }
+            if (!(await post("/template", { name: input }))) {
+              return;
+            }
 
-          flash("Saved as template");
-          field.value = "";
+            flash("Saved as template");
+            field.value = "";
+          })().catch((failure) => flash(errorMessage(failure)));
         }}
       >
         <input name="tpl" placeholder="Save as template…" />
@@ -1363,7 +1392,7 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
         {snapshots.isLoading && <li className="muted">Loading…</li>}
         {snapshots.error && <li role="alert">{snapshots.error.message}</li>}
         {snaps?.length === 0 && (
-          <li className="muted">No versions yet. Claude's edits are auto-saved here first.</li>
+          <li className="muted">No versions yet. Claude&apos;s edits are auto-saved here first.</li>
         )}
         {snaps?.map((s) => (
           <li key={s.id}>
@@ -1377,12 +1406,14 @@ function VersionsPanel({ id, k, flash }: VersionsPanelProps) {
             <button
               type="button"
               disabled={mutation.isPending}
-              onClick={async () => {
-                if (!(await post("/restore", { snapshotId: s.id }))) {
-                  return;
-                }
+              onClick={() => {
+                (async () => {
+                  if (!(await post("/restore", { snapshotId: s.id }))) {
+                    return;
+                  }
 
-                flash(`Restored "${s.name}"`);
+                  flash(`Restored "${s.name}"`);
+                })().catch((failure) => flash(errorMessage(failure)));
               }}
             >
               Restore

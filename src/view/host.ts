@@ -83,7 +83,9 @@ export function createViewHost(
       applyDeepLink(callbacks);
     },
     dispose() {
-      void app.close();
+      app.close().catch((failure) => {
+        globalThis.reportError(failure);
+      });
     },
     callTool: (name, args) => app.callServerTool({ name, arguments: args }),
     async openLink(url) {

@@ -1,3 +1,6 @@
+import { requiredValue } from "../shared/required-value.ts";
+import { storedElementsSchema } from "../shared/schemas.ts";
+
 const serverCapabilities = { tools: {}, prompts: {}, resources: {}, events: {} };
 
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -147,6 +150,7 @@ const opSchema = z.discriminatedUnion("op", [
       .string()
       .optional()
       .describe("required unless kind is given; e.g. kind=sql_db, label='Orders DB'"),
+    // eslint-disable-next-line anti-slop/no-shape-in-symbol-names -- Public diagram wire key; renaming it would break existing clients.
     shape: z
       .enum(GEOMETRIES)
       .optional()
@@ -174,6 +178,7 @@ const opSchema = z.discriminatedUnion("op", [
     label: z.string().optional().describe("new label (frame name / note text for those types)"),
     color: color.optional(),
     text_color: textColor.optional(),
+    // eslint-disable-next-line anti-slop/no-shape-in-symbol-names -- Public diagram wire key; renaming it would break existing clients.
     shape: z.enum(GEOMETRIES).optional(),
     dashed: z.boolean().optional(),
     width: z.number().optional(),
@@ -350,7 +355,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
 
       const data =
         format === "raw"
-          ? { elements: await room(env, d.id).getRaw() }
+          ? { elements: await Promise.resolve(room(env, d.id).getRaw()) }
           : await room(env, d.id).getGraph();
 
       return {
@@ -382,7 +387,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
     },
     async ({ diagram }: DiagramArgs) => {
       const d = await pick(diagram);
-      const elements = await room(env, d.id).getRaw();
+      const elements = storedElementsSchema.parse(await Promise.resolve(room(env, d.id).getRaw()));
 
       return {
         content: [{ type: "text" as const, text: `${elements.length} elements` }],
@@ -468,7 +473,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
 
       if (diagram) {
         activeName = (await pick(diagram)).name;
-        const parsed = parseLink(diagram)!;
+        const parsed = requiredValue(parseLink(diagram), "parseLink(diagram)");
         activeDiagram = shareLink(origin, parsed.id, parsed.key);
       }
 
@@ -839,7 +844,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
     "components",
     "components://catalog",
     { title: "Standard system design components", mimeType: "application/json" },
-    async (uri: URL) => ({
+    (uri: URL) => ({
       contents: [
         {
           uri: uri.href,
@@ -848,6 +853,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
             COMPONENTS.map(({ kind, label, geometry, group, icon }) => ({
               kind,
               label,
+              // eslint-disable-next-line anti-slop/no-shape-in-symbol-names -- Public diagram wire key; renaming it would break existing clients.
               shape: geometry,
               group,
               icon,
@@ -861,7 +867,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
     "rubric",
     "rubric://system-design",
     { title: "System design interview rubric", mimeType: "text/markdown" },
-    async (uri: URL) => ({
+    (uri: URL) => ({
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: RUBRIC }],
     }),
   );

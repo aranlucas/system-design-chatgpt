@@ -1,3 +1,4 @@
+import { promiseResult } from "../src/shared/promise-result.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "@modelcontextprotocol/ext-apps";
 import { createViewHost, type ViewHost } from "../src/view/host.ts";
@@ -36,8 +37,10 @@ describe("MCP Apps with OpenAI Extensions", () => {
   it("receives initial tool input during connection and subsequent delayed input", async () => {
     const onDiagram = vi.fn();
     const onContext = vi.fn();
-    mcpSpies.connect.mockImplementation(async () => {
-      mcpApp.ontoolinput?.({ arguments: { diagram: LINK } });
+    mcpSpies.connect.mockImplementation(() => {
+      return promiseResult(() => {
+        mcpApp.ontoolinput?.({ arguments: { diagram: LINK } });
+      });
     });
     host = createViewHost(mcpApp);
     await host.start({ onDiagram, onContext });

@@ -45,6 +45,7 @@ async function buildView(view: ViewBuild) {
   const js = chunk.code.replaceAll("</script", String.raw`<\/script`);
   const html = readFileSync(view.template, "utf8").replace("/* VIEW_SCRIPT */", () => js);
   writeFileSync(view.output, html);
+  // eslint-disable-next-line no-console -- This CLI command reports its validation/build results to the terminal.
   console.log(`view: ${view.output} (${(html.length / 1024).toFixed(1)} KiB)`);
 }
 

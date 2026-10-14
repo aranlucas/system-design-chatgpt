@@ -1,3 +1,4 @@
+import { requiredValue } from "../shared/required-value.ts";
 import { sceneDataSchema } from "../shared/schemas.ts";
 import { errorMessage } from "../shared/errors.ts";
 // MCP App view shown for get_scene: a live-ish picture of the shared canvas inside the chat.
@@ -19,7 +20,8 @@ interface SceneData {
 
 const POLL_MS = 4000;
 
-const byId = (id: string) => document.querySelector(`#${id}`)!;
+const byId = (id: string) =>
+  requiredValue(document.querySelector(`#${id}`), "document.querySelector(`#${id}`)");
 
 const title = byId("title");
 
@@ -124,7 +126,13 @@ function setDisplayMode(mode: string) {
   clearInterval(poll);
 
   if (mode === "fullscreen") {
-    poll = setInterval(() => void load(), POLL_MS);
+    poll = setInterval(
+      () =>
+        load().catch((failure) => {
+          status.textContent = errorMessage(failure);
+        }),
+      POLL_MS,
+    );
   }
 }
 
@@ -137,7 +145,9 @@ function setDiagram(link: string) {
     title.textContent = "Diagram";
     status.textContent = "Loading…";
     openBtn.hidden = true;
-    void load();
+    load().catch((failure) => {
+      status.textContent = errorMessage(failure);
+    });
   }
 }
 
@@ -162,27 +172,39 @@ function applyContext(ctx: McpUiHostContext) {
   }
 }
 
-refreshBtn.addEventListener("click", () => void load());
-
-openBtn.addEventListener("click", async () => {
-  try {
-    if (data) {
-      await host.openLink(data.url);
-    }
-  } catch (error) {
-    status.textContent = errorMessage(error);
-  }
+refreshBtn.addEventListener("click", () => {
+  load().catch((failure) => {
+    status.textContent = errorMessage(failure);
+  });
 });
 
-fullBtn.addEventListener("click", async () => {
-  const want = displayMode === "fullscreen" ? "inline" : "fullscreen";
+openBtn.addEventListener("click", () => {
+  (async () => {
+    try {
+      if (data) {
+        await host.openLink(data.url);
+      }
+    } catch (error) {
+      status.textContent = errorMessage(error);
+    }
+  })().catch((failure) => {
+    status.textContent = errorMessage(failure);
+  });
+});
 
-  try {
-    const { mode } = await host.requestDisplayMode(want);
-    setDisplayMode(mode);
-  } catch (error) {
-    status.textContent = errorMessage(error);
-  }
+fullBtn.addEventListener("click", () => {
+  (async () => {
+    const want = displayMode === "fullscreen" ? "inline" : "fullscreen";
+
+    try {
+      const { mode } = await host.requestDisplayMode(want);
+      setDisplayMode(mode);
+    } catch (error) {
+      status.textContent = errorMessage(error);
+    }
+  })().catch((failure) => {
+    status.textContent = errorMessage(failure);
+  });
 });
 
 window.addEventListener("pagehide", () => {

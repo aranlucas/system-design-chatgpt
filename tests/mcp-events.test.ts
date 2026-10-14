@@ -1,3 +1,4 @@
+import { promiseResult } from "../src/shared/promise-result.ts";
 import { requiredTestValue } from "./helpers/required-test-value.ts";
 import { strictFake } from "./helpers/strict-fake.ts";
 import { sceneDataSchema } from "../src/shared/schemas.ts";
@@ -150,28 +151,30 @@ class Receiver {
   echoChallenge = true;
   /** Status returned for event deliveries (the verification POST always gets 200). */
   eventStatus = 200;
-  fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
-    // The server always serializes the body once and signs those exact bytes.
-    const body = eventBodySchema.parse(
-      JSON.parse(z.string().parse(init?.body)),
-    ) satisfies EventBody;
+  fetch = vi.fn((input: string | URL, init?: RequestInit) => {
+    return promiseResult(() => {
+      // The server always serializes the body once and signs those exact bytes.
+      const body = eventBodySchema.parse(
+        JSON.parse(z.string().parse(init?.body)),
+      ) satisfies EventBody;
 
-    this.deliveries.push({
-      url: String(input),
-      headers: Object.fromEntries(new Headers(init?.headers)),
-      body,
-      raw: z.string().parse(init?.body),
-    });
+      this.deliveries.push({
+        url: String(input),
+        headers: Object.fromEntries(new Headers(init?.headers)),
+        body,
+        raw: z.string().parse(init?.body),
+      });
 
-    if (body.type === "verification") {
-      if (!this.echoChallenge) {
-        return new Response("nope", { status: 400 });
+      if (body.type === "verification") {
+        if (!this.echoChallenge) {
+          return new Response("nope", { status: 400 });
+        }
+
+        return Response.json({ challenge: body.challenge });
       }
 
-      return Response.json({ challenge: body.challenge });
-    }
-
-    return new Response(null, { status: this.eventStatus });
+      return new Response(null, { status: this.eventStatus });
+    });
   });
   /** Deliveries that are events rather than control envelopes. */
   events(): Delivery[] {
@@ -189,12 +192,14 @@ beforeEach(() => {
   // The verification cache is per-isolate soft state, so it has to be cleared
   // between tests that reuse the same principal and callback URL.
   resetVerificationCache();
-  vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
-    if (new URL(input).hostname === "cloudflare-dns.com") {
-      return Response.json({ Status: 0, TC: false, Answer: [{ type: 1, data: "8.8.8.8" }] });
-    }
+  vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
+    return promiseResult(() => {
+      if (new URL(input).hostname === "cloudflare-dns.com") {
+        return Response.json({ Status: 0, TC: false, Answer: [{ type: 1, data: "8.8.8.8" }] });
+      }
 
-    return receiver.fetch(input, init);
+      return receiver.fetch(input, init);
+    });
   });
 });
 
@@ -433,13 +438,13 @@ describe("public MCP tool metadata", () => {
     expect(tools).toHaveLength(18);
 
     for (const tool of tools) {
-      expect(tool.annotations?.readOnlyHint, tool.name).toBeTypeOf("boolean");
-      expect(tool.annotations?.destructiveHint, tool.name).toBeTypeOf("boolean");
-      expect(tool.annotations?.openWorldHint, tool.name).toBeTypeOf("boolean");
+      expect(tool.annotations?.readOnlyHint).toBeTypeOf("boolean");
+      expect(tool.annotations?.destructiveHint).toBeTypeOf("boolean");
+      expect(tool.annotations?.openWorldHint).toBeTypeOf("boolean");
+    }
 
-      if (tool.annotations?.readOnlyHint) {
-        expect(tool.annotations.destructiveHint).toBe(false);
-      }
+    for (const tool of tools.filter((candidate) => candidate.annotations?.readOnlyHint)) {
+      expect(tool.annotations?.destructiveHint).toBe(false);
     }
 
     for (const name of ["apply_patch", "restore", "tidy", "layout"]) {
@@ -591,7 +596,7 @@ describe("events/unsubscribe", () => {
     await rpc("events/subscribe", subscribeParams(d.link));
     const room = await makeRoom(env.env, d.id, d.name);
     // Background delivery; the subscription is removed before it settles.
-    void room.applyPatch([{ op: "add_node", label: "Web" }], "agent");
+    const changing = room.applyPatch([{ op: "add_node", label: "Web" }], "agent");
 
     const params: UnsubscribeParams = {
       name: "diagram.changed",
@@ -603,6 +608,7 @@ describe("events/unsubscribe", () => {
     expect(env.db.event_subscriptions.size).toBe(0);
     // Unsubscribing again changes nothing.
     expect((await rpc("events/unsubscribe", params)).result).toBeDefined();
+    await changing;
     expect(env.db.event_subscriptions.size).toBe(0);
   });
 });
@@ -728,7 +734,7 @@ describe("delivery", () => {
 async function validSignature(delivery: Delivery, secret = SECRET): Promise<boolean> {
   const key = await crypto.subtle.importKey(
     "raw",
-    Uint8Array.from(atob(secret.slice(6)), (c) => c.charCodeAt(0)),
+    Uint8Array.from(atob(secret.slice(6)), (c) => c.codePointAt(0) ?? 0),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["verify"],
@@ -745,7 +751,7 @@ async function validSignature(delivery: Delivery, secret = SECRET): Promise<bool
       crypto.subtle.verify(
         "HMAC",
         key,
-        Uint8Array.from(atob(signature.split(",")[1]), (c) => c.charCodeAt(0)),
+        Uint8Array.from(atob(signature.split(",")[1]), (c) => c.codePointAt(0) ?? 0),
         signed,
       ),
     ),

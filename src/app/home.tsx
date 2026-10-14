@@ -137,12 +137,13 @@ export function Home() {
 
   const loading = session.isLoading || (signedIn === true && diagrams.isLoading);
 
-  const error =
-    session.error?.message ||
-    logout.error?.message ||
-    creation.error?.message ||
-    remove.error?.message ||
-    (signedIn && (diagrams.error?.message || templatesQuery.error?.message));
+  const error = [
+    session.error?.message,
+    logout.error?.message,
+    creation.error?.message,
+    remove.error?.message,
+    ...(signedIn ? [diagrams.error?.message, templatesQuery.error?.message] : []),
+  ].find((message) => message !== undefined && message !== "");
 
   function removeDiagram(diagram: Diagram) {
     if (
@@ -168,7 +169,7 @@ export function Home() {
         {signedIn === false && (
           <p>
             <a href="/api/auth/login">Sign in with GitHub</a> to create diagrams and open your
-            private library. Anyone with a diagram's share link can still collaborate.
+            private library. Anyone with a diagram&apos;s share link can still collaborate.
           </p>
         )}
         {signedIn && (
@@ -214,8 +215,8 @@ export function Home() {
       <section className="card">
         <h2>Connect your agent</h2>
         <p className="muted">
-          Run once in your terminal. Then paste a diagram's share link to the agent ("join
-          &lt;link&gt;").
+          Run once in your terminal. Then paste a diagram&apos;s share link to the agent (&quot;join
+          &lt;link&gt;&quot;).
         </p>
         {setupCommands().map(({ client, cmd }) => (
           <CopyRow key={client} label={client} text={cmd} />

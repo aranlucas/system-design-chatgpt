@@ -1,3 +1,4 @@
+import { requiredValue } from "../shared/required-value.ts";
 import { z } from "zod";
 import {
   App,
@@ -27,7 +28,10 @@ const app = new App(
   { autoResize: false },
 );
 
-const origin = document.querySelector<HTMLMetaElement>('meta[name="canvas-origin"]')!.content;
+const origin = requiredValue(
+  document.querySelector<HTMLMetaElement>('meta[name="canvas-origin"]'),
+  "document.querySelector<HTMLMetaElement>('meta[name=\"canvas-origin\"]')",
+).content;
 
 type ElementConstructor<T extends HTMLElement> = new () => T;
 
@@ -47,7 +51,10 @@ const frame = requiredElement("canvas", HTMLIFrameElement);
 
 const empty = requiredElement("empty", HTMLElement);
 
-const status = document.querySelector("#status")!;
+const status = requiredValue(
+  document.querySelector("#status"),
+  'document.querySelector("#status")',
+);
 
 const refresh = requiredElement("refresh", HTMLButtonElement);
 
@@ -299,10 +306,13 @@ function showLibrary() {
 
 library.addEventListener("click", showLibrary);
 
-document.querySelector("#join")!.addEventListener("submit", (event) => {
-  event.preventDefault();
-  void joinDiagram(input.value.trim()).catch(errorMessage);
-});
+requiredValue(document.querySelector("#join"), 'document.querySelector("#join")').addEventListener(
+  "submit",
+  (event) => {
+    event.preventDefault();
+    void joinDiagram(input.value.trim()).catch(errorMessage);
+  },
+);
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (
@@ -326,7 +336,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
           ? "Selection attached to chat."
           : "Open a conversation panel to attach a selection.";
 
-        return;
+        return attached;
       })
       .catch(errorMessage);
   }
