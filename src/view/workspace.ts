@@ -39,7 +39,7 @@ function requiredElement<T extends HTMLElement>(id: string, ctor: ElementConstru
   const node = document.querySelector(`#${id}`);
 
   if (!(node instanceof ctor)) {
-    throw new Error(`Missing ${id} element`);
+    throw new TypeError(`Missing ${id} element`);
   }
 
   return node;
