@@ -1,5 +1,8 @@
 strictPeerDependencies: true
 autoInstallPeers: false
+peerDependencyRules:
+  allowedVersions:
+    "@aranlucas/oxforge@0.2.2>oxfmt": "^0.74.0"
 allowBuilds:
   esbuild: true
   workerd: true
