@@ -23,7 +23,7 @@ documented `{ url }` deep link and the older `{ path, query }` payload. It has n
 runtime SDK dependency. The app does not depend on `window.openai`.
 
 Installs enable `strict-peer-dependencies` and disable `auto-install-peers`.
-`pnpm check:deps` and CI prevent the legacy SDK packages from returning. The
+CI runs a frozen install with strict peer checking. The
 application declares no peer dependencies of its own; React and Excalidraw's
 normal peer requirements are still present and satisfied. This is an experiment
 implementing the protocol subset it needs, not the full Extensions SDK surface.
