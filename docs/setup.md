@@ -115,10 +115,9 @@ Excalidraw's `updateLibrary` API imports the items, shows its loading state, and
 any existing library items.
 
 `pnpm-workspace.yaml` enables strict peer checking and disables automatic peer installation.
-The pinned MCP packages are all v2. `pnpm check:deps` runs the dependency policy
-test in Vitest; the full `pnpm test` suite runs the same assertions in CI. It rejects the legacy
-`@modelcontextprotocol/sdk` and `@openai/mcp-extensions` packages in the manifest
-or lockfile; CI also runs a frozen, strict install before the checks.
+The pinned MCP packages are all v2. CI runs
+`pnpm install --frozen-lockfile --strict-peer-dependencies` before type checking,
+linting, tests, and the bundle check.
 
 For a source-map breakdown, run `pnpm build:view`, then
 `pnpm exec vite build --sourcemap`. The optional

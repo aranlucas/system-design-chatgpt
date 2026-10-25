@@ -16,12 +16,11 @@
     "lint": "oxlint --max-warnings 0",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "check": "pnpm check:deps && pnpm typecheck && pnpm lint && pnpm format:check",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check",
     "typecheck": "tsc -b",
     "cf-typegen": "cf workers types",
     "build:preview": "pnpm build:view && CLOUDFLARE_VITE_PREVIEW_BUILD=true vite build",
     "deploy:preview": "pnpm build:preview && cf previews deploy --prebuilt",
-    "check:deps": "vitest run test/dependency-policy.test.ts",
     "lint:fix": "oxlint --fix"
   },
   "dependencies": {

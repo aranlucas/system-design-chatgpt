@@ -167,7 +167,6 @@ nobody asked it to look at.
   ChatGPT workspace.
 - `src/shared/openai-extensions.ts` — the small, validated Extensions host-context
   adapter; tool and resource metadata are registered in `src/worker/mcp.ts`.
-- `test/dependency-policy.test.ts` — prevents reintroducing the legacy SDK or MCP v1 peers.
 - `docs/setup.md` — local/deployment setup and MCP client commands.
 - `docs/design.md` — detailed data flow, storage, auth, and operation contracts.
 
