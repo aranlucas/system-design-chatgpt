@@ -21,7 +21,7 @@
     "cf-typegen": "cf workers types",
     "build:preview": "pnpm build:view && CLOUDFLARE_VITE_PREVIEW_BUILD=true vite build",
     "deploy:preview": "pnpm build:preview && cf previews deploy --prebuilt",
-    "check:deps": "node scripts/check-dependencies.ts",
+    "check:deps": "vitest run test/dependency-policy.test.ts",
     "lint:fix": "oxlint --fix"
   },
   "dependencies": {

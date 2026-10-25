@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aranlucas/system-design-chatgpt/actions/workflows/check.yml"><img src="https://github.com/aranlucas/system-design-chatgpt/actions/workflows/check.yml/badge.svg" alt="Checks" /></a>
+  <a href="https://github.com/aranlucas/system-design-chatgpt/actions/workflows/ci.yml"><img src="https://github.com/aranlucas/system-design-chatgpt/actions/workflows/ci.yml/badge.svg" alt="Checks" /></a>
 </p>
 
 <p align="center">
@@ -167,7 +167,7 @@ nobody asked it to look at.
   ChatGPT workspace.
 - `src/shared/openai-extensions.ts` — the small, validated Extensions host-context
   adapter; tool and resource metadata are registered in `src/worker/mcp.ts`.
-- `scripts/check-dependencies.ts` — prevents reintroducing the legacy SDK or MCP v1 peers.
+- `test/dependency-policy.test.ts` — prevents reintroducing the legacy SDK or MCP v1 peers.
 - `docs/setup.md` — local/deployment setup and MCP client commands.
 - `docs/design.md` — detailed data flow, storage, auth, and operation contracts.
 
