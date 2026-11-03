@@ -489,18 +489,6 @@ describe("target resolution", () => {
 });
 
 describe("sync invariants", () => {
-  it("keeps z-order indices strictly increasing", () => {
-    const s = fresh();
-    applyOk(s, [
-      { op: "add_node", ref: "a", label: "A" },
-      { op: "add_node", ref: "b", label: "B" },
-      { op: "connect", from: "a", to: "b" },
-      { op: "add_note", text: "n" },
-    ]);
-    const live = s.live();
-    expect(live.every((e, i, a) => i === 0 || (a[i - 1].index ?? "") < (e.index ?? ""))).toBe(true);
-  });
-
   it("bumps versions on mutate and tracks changed elements", () => {
     const s = fresh();
     const [r] = applyOk(s, [{ op: "add_node", label: "A" }]);

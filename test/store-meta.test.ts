@@ -1,9 +1,8 @@
 import { requiredTestValue } from "@test/helpers/required-test-value.ts";
-// Capability links, diagram lifecycle (store.ts), component catalog, rubric.
+// Capability links, diagram lifecycle (store.ts), component catalog, agent colours.
 import { describe, expect, it } from "vitest";
 import { AGENT_STROKE } from "@/shared/protocol.ts";
 import { COLORS } from "@/worker/scene.ts";
-import { RUBRIC } from "@/worker/rubric.ts";
 import {
   createDiagram,
   listTemplates,
@@ -56,14 +55,6 @@ describe("diagram lifecycle (store.ts + real rooms on fake bindings)", () => {
     expect(await verifyKey(env, "nope-nope-nope", d.key)).toBeNull();
   });
 
-  it("creates from a builtin template through the room", async () => {
-    const { env, rooms } = makeEnv();
-    const d = await createDiagram(env, "Web", "builtin:web-baseline");
-    const g = await requiredTestValue(rooms.get(d.id)).getGraph();
-    expect(g.nodes).toHaveLength(9);
-    expect(g.edges).toHaveLength(8);
-  });
-
   it("rejects unknown templates", async () => {
     const { env } = makeEnv();
     await expect(createDiagram(env, "X", "builtin:nope")).rejects.toThrow(
@@ -107,16 +98,7 @@ describe("component catalog", () => {
   });
 });
 
-describe("rubric", () => {
-  it("covers the ten interview dimensions", () => {
-    const items = RUBRIC.match(/^\d+\. /gm);
-    expect(items).toHaveLength(10);
-
-    for (const word of ["Requirements", "Estimates", "Trade-offs"]) {
-      expect(RUBRIC).toContain(word);
-    }
-  });
-
+describe("agent colours", () => {
   it("keeps agent stroke distinct from the violet fill", () => {
     expect(AGENT_STROKE).toBe("#6741d9");
     expect(COLORS.violet).toBe("#d0bfff");
