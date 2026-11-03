@@ -66,7 +66,7 @@ by `pnpm build:view`.
 ## Try it
 
 1. Install dependencies with `pnpm install --frozen-lockfile`.
-2. Run `pnpm check`, `pnpm test`, and `pnpm check:bundle`.
+2. Run `pnpm check`, `pnpm test`, and `pnpm build`.
 3. Provision this repository's Cloudflare resources and deploy it to a test
    deployment with the GitHub OAuth setup described
    in [setup.md](setup.md). Connect its HTTPS `/mcp` endpoint to a development
