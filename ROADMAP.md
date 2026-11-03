@@ -6,12 +6,6 @@ Updated 2026-10-26. Proposed release order, not delivery dates or evidence of cu
 
 A ChatGPT user who wants the diagram and conversation to remain in sync through a complete architecture discussion.
 
-## Current baseline
-
-This experiment already embeds a collaborative Excalidraw editor in ChatGPT sidebar/conversation surfaces and implements the extension protocol alongside MCP. Its value is the host-integrated journey, not a second independent canvas engine.
-
-Planning evidence: [README](README.md) and [host integration notes](docs/chatgpt-plugin-api.md) at `08a2e5f6e1ca`. This focused product pass does not claim a complete new code audit or live-provider validation.
-
 ## Prioritized releases
 
 | Order | Feature                                          | User value and scope                                                                                                                   | Release acceptance                                                                                                     |
@@ -35,4 +29,4 @@ Ship the board/conversation identity and resume journey, then test it in the sup
 
 Treat extension availability and host behavior as release prerequisites to verify, not guarantees from local tests. Keep the share-link capability boundary explicit; do not imply invitation-only collaboration already exists.
 
-Engineering work belongs in the milestone only when it enables that acceptance criterion. Prefer existing native libraries and test runners. Update this roadmap when a user-visible increment ships, recording the outcome and remaining limits rather than checking off implementation activity alone.
+Update this roadmap when a user-visible increment ships, recording the outcome and remaining limits.
