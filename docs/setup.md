@@ -1,274 +1,137 @@
 # Setup
 
-How to run, deploy and connect System Design for ChatGPT. For what it does, see the
-[README](../README.md); for how it works, see [design.md](design.md).
-
 ## Run locally
+
+Use the Node version in `.node-version` and pnpm version in `package.json`.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev          # https://system-design-chatgpt.localhost
+pnpm dev
 ```
 
-1. Configure local GitHub sign-in as described below, then open https://system-design-chatgpt.localhost
-   and create a diagram (optionally from a template).
-2. Add the MCP server once (use the deployed URL + `/mcp` in production):
-   - Claude Code: `claude mcp add --transport http system-design https://system-design-chatgpt.localhost/mcp`
-   - Codex: `codex mcp add system-design --url https://system-design-chatgpt.localhost/mcp`
-3. Tell the agent "join <share link>", then draw together.
-
-If you previously registered this server as `canvas`, remove that entry in your MCP client
-and add it again as `system-design` using the command above. Existing diagram links still
-work.
-
-### Portless
-
-`pnpm dev` runs Vite through [Portless](https://github.com/vercel-labs/portless) (a dev
-dependency); its first run may ask for `sudo` to bind port 443 and trust a local
-certificate. Linked Git worktrees get a branch prefix, such as
-`https://fix-ui.system-design-chatgpt.localhost`; register that origin's `/github/callback` in the
-development OAuth app. Node MCP clients started outside Portless may need
+`pnpm dev` builds both MCP views, then runs Vite through Portless. The usual URL is
+`https://system-design-chatgpt.localhost`; linked worktrees receive a branch prefix.
+Use the URL Portless prints. Its first run may need permission to bind port 443 and
+trust its local certificate. Node clients outside Portless may need
 `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`.
 
-## Deploy (Cloudflare)
-
-This repository uses its own Worker and resource names. D1 and KV IDs in
-`cloudflare.config.ts` and `wrangler.jsonc` are placeholders. Create resources in
-your Cloudflare account, then replace the IDs in both files before deploying.
-Use a separate GitHub OAuth app for this deployment.
+Configure GitHub sign-in below, then open the local URL and create a diagram.
+Register the local MCP endpoint with your client:
 
 ```sh
-npx wrangler d1 create system-design-chatgpt   # replace the production D1 ID in both configuration files
-npx wrangler r2 bucket create system-design-chatgpt
-npx wrangler kv namespace create system-design-chatgpt-oauth  # replace production OAUTH_KV in both files
-pnpm deploy
+claude mcp add --transport http system-design https://system-design-chatgpt.localhost/mcp
+codex mcp add system-design --url https://system-design-chatgpt.localhost/mcp
 ```
 
-Then `claude mcp add --transport http system-design https://<your-worker>.workers.dev/mcp`
-(or `codex mcp add system-design --url …/mcp`).
+Substitute the worktree origin when applicable. Approve the OAuth flow, then tell the
+agent “join” with a board's share link. Use your deployment origin for a hosted server.
 
-Git-connected Workers Builds deploy `main` and build a Preview for every other branch.
-Previews get their own Durable Object storage automatically but need separate D1 and R2
-resources, set in the `ctx.isPreview` branch of `cloudflare.config.ts` (and the compatibility `wrangler.jsonc`):
+## Cloudflare resources and deployment
+
+`cloudflare.config.ts` is used by the current Vite/`cf` build. `wrangler.jsonc` retains
+compatibility routing and bindings for Wrangler. Both contain configured D1/KV IDs;
+for a new deployment, provision your own resources and replace the corresponding IDs
+in both files. The configured bucket names also need to exist in your account.
+
+Provision matching production and preview resources:
 
 ```sh
-npx wrangler d1 create system-design-chatgpt-preview        # replace the preview D1 ID in both configuration files
-npx wrangler r2 bucket create system-design-chatgpt-preview
-npx wrangler kv namespace create system-design-chatgpt-preview-oauth  # replace preview OAUTH_KV in both files
+pnpm exec cf d1 create --name system-design-chatgpt
+pnpm exec cf r2 buckets create --name system-design-chatgpt
+pnpm exec cf kv namespaces create --title system-design-chatgpt-oauth
+pnpm exec cf d1 create --name system-design-chatgpt-preview
+pnpm exec cf r2 buckets create --name system-design-chatgpt-preview
+pnpm exec cf kv namespaces create --title system-design-chatgpt-preview-oauth
 ```
 
-## Sign-in for agents
-
-The MCP endpoint requires OAuth, so the first time an agent connects, your browser opens
-a consent page and signs you in with GitHub. The homepage uses the same GitHub
-identity to create boards and manage a private library. Shared canvas links still
-allow collaborators to draw without signing in. Browser login reuses the existing
-GitHub callback URL.
-
-Sign-in needs an OAuth app on GitHub, once per deployment:
-
-1. GitHub → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**.
-2. **Homepage URL**: your deployment's origin.
-   **Authorization callback URL**: `<origin>/github/callback`.
-3. Copy the client id and secret, then set them as Worker secrets:
+These commands use the repository's installed `cf` dependency. Copy each returned
+D1/KV ID into its production or preview binding before deploying. Configure secrets
+separately for each environment and register its actual OAuth callback origin.
 
 ```sh
-npx wrangler secret put GITHUB_CLIENT_ID
-npx wrangler secret put GITHUB_CLIENT_SECRET
+pnpm deploy            # build and cf deploy --prebuilt
+pnpm deploy:preview    # build preview and cf previews deploy --prebuilt
 ```
 
-Until both are set, `/mcp` still answers with a token challenge but `/authorize` reports
-that sign-in is not configured. The two `OAUTH_KV` namespaces (production and preview) hold
-tokens and codes; nothing else moves into KV.
+Preview builds select bindings through `ctx.isPreview` in `cloudflare.config.ts`.
+Preview Durable Object storage is isolated; D1, R2 and OAuth KV are shared across
+previews using the configured preview resources. Never point these bindings at
+production when testing. Git-connected build commands and branch rules must be
+configured in Cloudflare; this repository's GitHub workflow runs checks, not deployment.
 
-For local sign-in, create a separate GitHub OAuth app with callback URL
-`https://system-design-chatgpt.localhost/github/callback`, and put its credentials in an ignored `.dev.vars`:
+## GitHub OAuth
+
+Create a GitHub OAuth app per deployment (GitHub **Settings → Developer settings →
+OAuth Apps**): homepage is the deployment origin; callback is
+`<origin>/github/callback`. The homepage and agents use the same callback and GitHub
+identity. GitHub sign-in requests public profile identity without email access;
+GitHub's token is not handed to the MCP client.
+
+Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` as secrets in the deployment's
+Worker settings in Cloudflare. Configure the preview deployment separately.
+
+For local sign-in, register the exact Portless/worktree origin and put the credentials
+in ignored `.dev.vars`:
 
 ```dotenv
 GITHUB_CLIENT_ID=<local-app-client-id>
 GITHUB_CLIENT_SECRET=<local-app-client-secret>
 ```
 
-Every MCP call requires `mcp:read`. Tools that create diagrams, save versions, edit
-content or control a browser view also require `mcp:write`; read-only tokens receive
-an OAuth scope challenge before a write tool runs. A diagram share link is still
-required for access to an existing board. GitHub sign-in uses public profile identity
-without requesting email access, and GitHub's token is never handed to the MCP client.
+Without both secrets, `/mcp` still challenges for a token but `/authorize` reports
+unconfigured sign-in. Production and preview use separate `OAUTH_KV` namespaces for
+auth state. OAuth needs an interactive browser; unattended clients cannot authorize
+themselves. See [access boundaries](design.md#access-and-privacy) for scopes and sharing.
 
-Clients that connect without a browser — CI, a scripted agent — cannot complete an
-interactive flow. Those still need a diagram share link for the board itself, since the
-link is what authorizes access to a diagram.
-
-## Checks
+## Local checks
 
 ```sh
-pnpm check                              # dependency policy, typecheck, Oxlint, Oxfmt
-pnpm test                               # vitest: scene engine, tidy, rooms, HTTP routes
-pnpm build                       # native production build
-pnpm format                             # apply Oxfmt
-pnpm test test/scene-smoke.test.ts      # scene engine smoke regression
-pnpm exec vitest run test/scene-tidy.test.ts  # layout quality and second-pass idempotence
+pnpm check     # TypeScript, Oxlint, Oxfmt
+pnpm test      # Vitest
+pnpm build     # both self-contained views and the application/Worker
+pnpm format    # apply Oxfmt
 ```
 
-The component library and its scene builder load only when the library sidebar opens.
-Excalidraw's `updateLibrary` API imports the items, shows its loading state, and preserves
-any existing library items.
-
-`pnpm-workspace.yaml` enables strict peer checking and disables automatic peer installation.
-The pinned MCP packages are all v2. CI runs
-`pnpm install --frozen-lockfile --strict-peer-dependencies` before type checking,
-linting, tests, and the bundle check.
-
-For a source-map breakdown, run `pnpm build:view`, then
-`pnpm exec vite build --sourcemap`. The optional
-[bundle-analyzer](https://github.com/lhorie/bundle-analyzer) can inspect
-`.cloudflare/output/v0/workers/default/assets/assets` and
-`.cloudflare/output/v0/workers/default/bundle` separately (it does not recurse into directories).
-Vite reports output bytes and compressed sizes during the production build.
-Run a normal `pnpm build` afterward to return to a build without source maps.
-
-See [improvements.md](improvements.md) for test coverage, findings, and related-project
-research.
-
-## Agent reference
-
-- **Tools**: `join_session`, `create_diagram`, `get_scene`, `get_selection`,
-  `get_screenshot`, `apply_patch`, `tidy`, `layout`, `import_mermaid`, `focus_view`,
-  `snapshot` / `list_snapshots` / `restore`, `list_templates` / `save_as_template`.
-- **Prompts**: `review_design`, `suggest_next_step`, `estimate_capacity`.
-  **Resource**: `rubric://system-design`.
-- **Events**: `diagram.changed`, `diagram.renamed`, `diagram.checkpointed`. See
-  [MCP events](#mcp-events) below.
-- **Components**: the agent adds library icons through `apply_patch` → `add_node` with a
-  `kind`; there is no separate library insertion tool. An explicit `shape` uses a basic
-  shape instead. Icons have tight artwork bounds for arrow bindings; captions wrap
-  independently below them.
-- **Focus / point**: `focus_view` targets components or frames by label or ID in the most
-  recently active open tab. `mode=focus` pans/zooms and highlights; `mode=point` shows a
-  temporary laser-style marker without panning; `gesture=heart` draws a fading heart. It
-  does not edit the diagram or selection, and creates no version.
-- **MCP Apps view**: in supporting clients, `get_scene` also returns an inline picture with
-  refresh, full screen (live-updating) and open-canvas buttons; terminal clients get the
-  usual text. The view lives in `src/view/`; `pnpm build:view` bundles it into
-  `public/mcp-view.html`, which the worker reads via the `ASSETS` binding.
-
-For the experimental sidebar app and conversation panel, see
-[ChatGPT Plugin Extensions experiment](chatgpt-plugin-api.md). Its widgets use
-MCP Apps v2 and the documented Extensions protocol directly; the server uses
-MCP v2 with the existing OAuth and MCP Events implementation.
+CI performs a frozen install with strict peer dependencies, then typechecks, linting,
+formatting, tests and a build. For bundle diagnosis, build the views first, then run
+`pnpm exec vite build --sourcemap`; run a normal build afterward to remove source maps.
 
 ## MCP events
 
-This integration follows [OpenAI's MCP Events guide](https://developers.openai.com/plugins/build/mcp-events)
-and requires protocol version `2026-07-28` for event discovery and subscriptions.
+Event discovery/subscriptions require MCP protocol `2026-07-28`. Configure
+`MCP_EVENT_CALLBACK_HOSTS` with exact hostnames operated by trusted MCP receivers.
+Obtain them from the connector callback configuration or the redacted `url` in a
+`host_not_allowed` error. Client names are not callback hostnames; wildcards and
+user-controlled domains must not be allowed.
 
-Before subscribing, configure `MCP_EVENT_CALLBACK_HOSTS` with the exact callback
-hostnames operated by your trusted MCP receivers. Obtain the hostname from the
-connector's callback configuration or the redacted `url` in a `host_not_allowed`
-subscription error. Do not infer it from the name of the client and do not allow
-user-controlled domains or wildcards. For example, for your own test receiver:
+Set the comma-separated hostnames as the `MCP_EVENT_CALLBACK_HOSTS` Worker secret.
+For local development,
+use `MCP_EVENT_CALLBACK_HOSTS=<trusted-callback-host>` in `.dev.vars`; configure preview
+separately. An empty list rejects subscriptions while ordinary tools remain available.
+Keep `global_fetch_strictly_public` enabled. See [event security and reliability](design.md#mcp-events)
+for the DNS trust boundary and delivery limits.
 
-```sh
-# Enter the real trusted callback hostname(s), comma-separated, at the prompt.
-npx wrangler secret put MCP_EVENT_CALLBACK_HOSTS
-```
+Subscriptions default to 12 hours, bounded to 5 minutes–7 days. Refresh extends the
+expiry and can rotate the signing secret, with a five-minute overlap. Webhooks carry
+`webhook-id`, `webhook-timestamp`, `webhook-signature` and `X-MCP-Subscription-Id`.
 
-For local development, add `MCP_EVENT_CALLBACK_HOSTS=<trusted-callback-host>` to
-`.dev.vars`. Configure preview deployments separately. An empty list rejects all
-subscriptions; ordinary MCP tools remain available.
+Test in the intended host with sample data:
 
-Callbacks must use HTTPS on port 443. The server checks both A and AAAA DNS answers
-before every verification or delivery, rejects non-public addresses, bounds response
-sizes and timeouts, and refuses redirects. Workers `fetch` does not expose address
-pinning while preserving TLS hostname verification, so this implementation requires
-trusted callback operators and `global_fetch_strictly_public`. DNS preflight alone
-does not guarantee protection from DNS rebinding. For arbitrary untrusted callback
-hosts, use an egress service that pins validated public addresses rather than widening
-the allowlist.
+1. Connect authenticated `/mcp` and rescan. Confirm `diagram.changed`,
+   `diagram.renamed`, and `diagram.checkpointed` are discovered.
+2. Ask “watch this diagram and when I change it, tell me what you would add.”
+   Confirm callback verification succeeds.
+3. Edit, rename and save a named checkpoint; confirm delivery and a chat response.
+4. Confirm agent edits are withheld unless `include_agent: true` was requested.
+5. Unsubscribe and verify delivery stops. Revoke the connector and verify subscriptions
+   stop after revocation becomes visible.
 
-ChatGPT can watch a board and react to changes without anyone asking it to. It
-discovers three event types and subscribes to one by naming the diagram:
+Repository transport tests use fake infrastructure and receiver APIs. They do not
+establish that a deployed host can complete OAuth or accept callbacks.
 
-| Event                  | Fires when                    | Tells the agent        |
-| ---------------------- | ----------------------------- | ---------------------- |
-| `diagram.changed`      | a person edits the canvas     | call `get_scene` again |
-| `diagram.renamed`      | the board is renamed          | the new name           |
-| `diagram.checkpointed` | someone saves a named version | a checkpoint was taken |
+## OpenAI domain verification
 
-A useful request sounds like: _"watch this diagram and when I change it, tell me
-what you would add."_ The agent subscribes with the same share link it passes to
-the tools.
-
-**The agent's own edits are not delivered** unless the subscription sets
-`include_agent`. Without that, every `apply_patch` the agent made would come back
-to it as an event and it would try to respond to its own work.
-
-Delivery is signed with [Standard Webhooks](https://www.standardwebhooks.com/):
-each POST carries `webhook-id`, `webhook-timestamp`, `webhook-signature` and
-`X-MCP-Subscription-Id`. Payloads are deliberately small — a diagram id and a
-count, never the elements themselves — and the agent re-reads the board with
-`get_scene` when it needs detail. The share link is not repeated in payloads, so
-the capability key stays out of the receiver's logs.
-
-**Reliability is limited.** Events are delivered best-effort from the room, not
-from a durable log, so a deployment restart can drop one and the agent will not be
-told. There is no replay: a subscription cannot ask for what it missed. That is
-fine for "watch this board" and wrong for anything that must not lose an event.
-
-Subscriptions default to 12 hours and grant between 5 minutes and 7 days. Refresh
-updates the expiration and signing secret without duplicating the subscription.
-During signing-key rotation, deliveries carry signatures from both keys for five
-minutes. Before every delivery attempt, the server rechecks the original OAuth
-consent grant, diagram capability hash, subscription expiry and cancellation.
-Revoking the connector's grant or deleting the diagram stops delivery; KV grant
-revocation follows Cloudflare KV's consistency behavior.
-
-To test the hosted integration in ChatGPT:
-
-1. Connect the authenticated `/mcp` endpoint through your plugin and rescan it.
-2. Confirm tools and the three events appear after discovery.
-3. Ask it to watch a diagram link; check that callback verification succeeds.
-4. Edit the board, rename it and save a named checkpoint. Confirm the expected
-   deliveries and the response in the subscribed chat.
-5. Confirm agent edits are withheld unless `include_agent: true` was requested.
-6. Stop monitoring, then confirm no further events arrive. Also revoke the connector
-   and confirm subscriptions stop after the revocation becomes visible.
-
-The automated tests cover the real OAuth provider and MCP transport with fake storage
-and receiver APIs. This ChatGPT test needs a deployed server, configured GitHub app and
-trusted callback hostnames.
-
-Under the hood: `events/list`, `events/subscribe` and `events/unsubscribe` are
-registered by hand in `src/worker/events.ts`, because the MCP SDK has no events
-support yet. Subscriptions live in D1. The endpoint is webhook-only, which is all
-ChatGPT speaks today; the poll and stream modes in the draft spec are not
-implemented.
-
-## Diagram library API
-
-**Your diagrams** lists the signed-in GitHub user's non-template boards, including
-boards created through MCP with the same identity. It refreshes every ten seconds
-while visible and when the window regains focus. Original share links remain valid.
-Saved templates are private to their owner; builtin templates remain available.
-
-Legacy boards without an ownership record are omitted from private libraries.
-Their original links still work. An operator must explicitly assign ownership in
-`diagram_owners`; signing in does not claim existing boards automatically.
-
-The diagrams API is paginated: `GET /api/diagrams?limit=50&cursor=...` returns
-`{ items, nextCursor }`. The default page size is 50, with a maximum of 100. Pass the
-returned cursor unchanged; a null cursor means the final page. Ordering uses creation time
-and ID, so newer inserts do not shift subsequent pages. The homepage offers **Load more
-diagrams** when needed and refreshes loaded pages.
-
-**Delete** asks for confirmation, then removes a diagram for everyone and disables its
-original and library links, including active canvas connections. The authorized API is
-`DELETE /api/diagrams/:id`, with an authenticated owner session and same-origin
-request. The capability route `DELETE /api/d/:id?k=<key>` also requires the owner.
-Deletion erases the room scene, uploaded files, saved versions, library entry,
-and subscriptions. It keeps an ownership record and deletion marker so the owner
-can retry incomplete cleanup. Previously saved template copies remain independent.
-
-For OpenAI domain verification, configure `OPENAI_APPS_CHALLENGE` with the exact
-portal token. `/.well-known/openai-apps-challenge` serves that token as plain text;
-it returns 404 when the secret is not configured.
+Set `OPENAI_APPS_CHALLENGE` to the portal's exact token.
+`/.well-known/openai-apps-challenge` serves it as plain text and returns 404 when
+unconfigured. Preserve Worker-first routing so the SPA cannot answer this request.
+For host-specific checks, see [ChatGPT integration](chatgpt-plugin-api.md).
