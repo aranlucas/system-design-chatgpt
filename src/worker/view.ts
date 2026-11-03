@@ -1,4 +1,4 @@
-// The get_scene MCP App view. scripts/build-view.ts builds it into a static asset
+// The get_scene MCP App view. vite.views.config.ts builds it into a static asset
 // (public/mcp-view.html); the resource handler reads it back through the ASSETS binding.
 
 // Resource URIs are host cache keys; keep this experiment separate from the old view.

@@ -163,7 +163,7 @@ nobody asked it to look at.
 - `src/worker/oauth.ts` — OAuth provider, GitHub sign-in, and the consent page.
 - `src/worker/events.ts` — MCP event catalog, subscriptions, and webhook delivery.
 - `src/shared/` — wire protocol and reusable component definitions.
-- `src/view/` plus `scripts/build-view.ts` — the inline preview and fullscreen
+- `src/view/` plus `vite.views.config.ts` — the inline preview and fullscreen
   ChatGPT workspace.
 - `src/shared/openai-extensions.ts` — the small, validated Extensions host-context
   adapter; tool and resource metadata are registered in `src/worker/mcp.ts`.
