@@ -87,3 +87,12 @@ retry/logout, and editor lost-frame recovery. No model calls or secrets required
 Published installed e2e guide and setup/writing-tests/running references read.
 Local installation used --ignore-scripts; only formatting/static lint performed.
 CI execution evidence pending; no local tests or builds run.
+
+### CI follow-up
+
+Run 42307611763 passed existing CI (tests/typecheck/lint/build) and the isolated
+room/events pre-fix assertion checks. Browser startup failed before tests:
+Cloudflare Vite dev module runner could not resolve existing `oauth-paths.ts`.
+Browser CI now builds baseline/fixed versions and uses the plugin's bundled
+`vite preview` path; this validates the built app without the dev module runner.
+No browser pass is claimed from that failed run.

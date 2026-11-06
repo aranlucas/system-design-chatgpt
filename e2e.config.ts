@@ -11,7 +11,16 @@ export default {
         url: "http://127.0.0.1:4173",
         command: {
           executable: "pnpm",
-          args: ["exec", "vite", "--host", "127.0.0.1", "--port", "4173", "--strictPort"],
+          args: [
+            "exec",
+            "vite",
+            "preview",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "4173",
+            "--strictPort",
+          ],
           log: ".e2e/logs/app.log",
         },
       },

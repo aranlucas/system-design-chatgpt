@@ -95,6 +95,7 @@ jobs:
         shell: bash
         run: |
           git show 2519a0fd931114ee408cd04c43303a0643ff046d:src/app/canvas.tsx > src/app/canvas.tsx
+          pnpm build
           if pnpm exec e2e run e2e/reconnect.e2e.ts --output .e2e/baseline; then
             echo "Expected reconnect regression did not fail"
             exit 1
@@ -107,6 +108,7 @@ jobs:
                 !results[0].attempts.some(attempt => attempt.error?.code === "ASSERTION_FAILED")) process.exit(1);
           '
           git restore src/app/canvas.tsx
+      - run: pnpm build
       - run: pnpm exec e2e run
       - name: Upload browser reports and failure evidence
         if: ${{ !cancelled() }}
