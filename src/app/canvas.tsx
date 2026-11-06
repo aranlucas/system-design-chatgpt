@@ -556,6 +556,10 @@ export function Canvas({ id, k }: CanvasProps) {
         const local = api.getSceneElementsIncludingDeleted();
         const merged = local.length ? reconcileElements(local, remote, api.getAppState()) : remote;
 
+        // Init is the authoritative receipt: frames sent before a disconnect
+        // may never have reached storage, including IDs absent from this scene.
+        synced.current.clear();
+
         for (const e of msg.elements) {
           synced.current.set(e.id, e.version);
         }

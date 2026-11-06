@@ -42,6 +42,15 @@ Tests and builds run exclusively in CI. Static inspection is not execution evide
    array order. Regression: assert live scene, persisted SQLite and broadcast
    contain only the winning revision for both versions and nonce tie-breaks.
 
+3. **Medium, high confidence — missing socket frames are not retried after reconnect.**
+   Independent review traced `canvas.tsx:flush/init`: sending records a version,
+   but reconnect init does not remove receipts for IDs absent on the server.
+   Trigger: new local element sent just as the connection drops, then an empty
+   server init. Actual: element remains visible but flush skips it; reload loses
+   it. Expected: resend local elements absent from the authoritative receipt.
+   Fix clears receipts before populating init. Deterministic browser regression
+   drives the real editor through a controlled lost-frame/repeated-init transport.
+
 ## Rejected hypotheses and existing protections
 
 - Shared-link editing without sign-in is intentional, documented capability access.
@@ -70,4 +79,11 @@ handlers and room storage. Live GitHub/ChatGPT compatibility remains outside CI.
 
 ## Evidence and outcome
 
-Implementation, independent review and CI results pending.
+Implemented all three findings without API changes. Independent review confirmed
+both initial findings and found the reconnect defect plus shallow-checkout CI
+setup, both addressed. Real e2e 0.23.0 + web 0.15.5 are lockfile-pinned. Browser
+journeys cover real unsigned Worker rejection, fixture-backed delete cancel/fail/
+retry/logout, and editor lost-frame recovery. No model calls or secrets required.
+Published installed e2e guide and setup/writing-tests/running references read.
+Local installation used --ignore-scripts; only formatting/static lint performed.
+CI execution evidence pending; no local tests or builds run.

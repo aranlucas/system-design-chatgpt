@@ -30,6 +30,7 @@ jobs:
         with:
           cache: true
           install: false
+          runtime: node@26
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --strict-peer-dependencies
@@ -46,3 +47,72 @@ jobs:
 
           - name: Build
             run: pnpm build
+
+  regression-reproduction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+        with:
+          install: false
+          runtime: node@26
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Demonstrate new regressions fail on the audited baseline
+        shell: bash
+        run: |
+          git show 2519a0fd931114ee408cd04c43303a0643ff046d:src/worker/room.ts > src/worker/room.ts
+          git show 2519a0fd931114ee408cd04c43303a0643ff046d:src/worker/events.ts > src/worker/events.ts
+          for behavior in 'merges duplicate IDs once' 'delivers through library capabilities'; do
+            if pnpm exec vitest run test/room.test.ts test/mcp-events.test.ts -t "$behavior" --reporter=json --outputFile=/tmp/regression.json; then
+              echo "Expected regression did not fail: $behavior"
+              exit 1
+            fi
+            node --input-type=module -e '
+              import fs from "node:fs";
+              const report = JSON.parse(fs.readFileSync("/tmp/regression.json", "utf8"));
+              const failures = report.testResults.flatMap(file => file.assertionResults).filter(test => test.status === "failed");
+              if (!failures.length || failures.some(test => !test.failureMessages.some(message => message.includes("AssertionError")))) process.exit(1);
+            '
+          done
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+        with:
+          runtime: node@26
+          install: false
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm exec e2e-web install chromium --with-deps
+      - name: Prove lost-frame regression on the original editor
+        shell: bash
+        run: |
+          git show 2519a0fd931114ee408cd04c43303a0643ff046d:src/app/canvas.tsx > src/app/canvas.tsx
+          if pnpm exec e2e run e2e/reconnect.e2e.ts --output .e2e/baseline; then
+            echo "Expected reconnect regression did not fail"
+            exit 1
+          fi
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const report = JSON.parse(fs.readFileSync(".e2e/baseline/report.json", "utf8"));
+            const results = report.run.results.filter(result => result.selected);
+            if (results.length !== 1 || results[0].status !== "failed" ||
+                !results[0].attempts.some(attempt => attempt.error?.code === "ASSERTION_FAILED")) process.exit(1);
+          '
+          git restore src/app/canvas.tsx
+      - run: pnpm exec e2e run
+      - name: Upload browser reports and failure evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reliability-e2e
+          path: .e2e/
+          include-hidden-files: true
+          retention-days: 7
