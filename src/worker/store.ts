@@ -3,7 +3,7 @@ import { storedElementsSchema } from "../shared/schemas.ts";
 // D1 metadata, capability keys, and diagram creation.
 import type { El } from "../shared/protocol.ts";
 import { BUILTIN_TEMPLATES } from "./templates.ts";
-import { newId } from "./scene.ts";
+import { newId } from "../shared/id.ts";
 import { HTTPException } from "hono/http-exception";
 import { readBounded, takeBudget } from "./request-limits.ts";
 
@@ -79,7 +79,6 @@ export const room = (env: Env, id: string) => env.ROOM.get(env.ROOM.idFromName(i
 
 export const shareLink = (origin: string, id: string, key: string) => `${origin}/d/${id}?k=${key}`;
 
-/** Row shapes read from D1. */
 type KeyedDiagramRow = DiagramRow & { key_hash: string };
 
 type AccessKeyRow = { access_key: string };
@@ -88,7 +87,6 @@ type TemplateRow = { id: string; name: string; description: string | null };
 
 type LibraryRow = { id: string; name: string; key: string | null; createdAt: number };
 
-/** A share link's parts. */
 export type DiagramLink = { id: string; key: string };
 
 export interface DiagramRow {

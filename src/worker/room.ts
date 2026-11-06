@@ -28,14 +28,12 @@ import { copyFiles } from "./store.ts";
 import { MAX_JSON_BYTES, MAX_SCENE_ELEMENTS, MAX_PATCH_OPS, takeBudget } from "./request-limits.ts";
 import { socketMessageSchema } from "./socket-schema.ts";
 
-/** A tab RPC waiting for its reply. */
 type RpcSuccess = Extract<ClientMessage, { type: "rpc_result"; ok: true }>;
 
 type RpcParams = ScreenshotParams | MermaidParams | FocusViewParams;
 
 type PendingCall = { resolve: (message: RpcSuccess) => void; reject: (e: Error) => void };
 
-/** An open tab and what it last told us. */
 type Tab = { ws: WebSocket; state: TabState };
 
 type ElementRow = { json: string };
@@ -93,7 +91,6 @@ export class DiagramRoom extends DurableObject<Env> {
   private els = new Map<string, El>();
   /** Bumped on every write, so a long operation can tell whether edits landed meanwhile. */
   private edits = 0;
-  /** Tombstoned element id → when it was deleted. */
   private deletedAt = new Map<string, number>();
   private diagramId = "";
   private name = "Untitled";
@@ -652,7 +649,6 @@ export class DiagramRoom extends DurableObject<Env> {
     });
   }
 
-  /** Live elements in z-order. */
   getRaw() {
     return promiseResult(() => {
       return this.ordered().filter((e) => !e.isDeleted);

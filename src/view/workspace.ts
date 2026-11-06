@@ -1,3 +1,4 @@
+import { workspaceLibrarySchema } from "../shared/workspace-library.ts";
 import { requiredValue } from "../shared/required-value.ts";
 import { z } from "zod";
 import {
@@ -10,13 +11,6 @@ import { deepLinkUrl, interactionCursor } from "../shared/openai-extensions.ts";
 import { embeddedCanvasUrl, isEmbeddedCanvasMessage } from "../shared/embedded-canvas.ts";
 
 type DiagramOption = { name: string; diagram: string };
-
-const libraryPageSchema = z.object({
-  diagrams: z.array(z.object({ name: z.string(), diagram: z.string() })),
-  nextCursor: z.string().nullable(),
-  activeDiagram: z.string().optional(),
-  activeName: z.string().optional(),
-});
 
 const joinedSceneSchema = z.object({ diagram: z.string() });
 
@@ -144,7 +138,7 @@ function receiveLibrary(result: WorkspaceResult, append = false) {
     throw new TypeError("Could not load your diagrams.");
   }
 
-  const parsed = libraryPageSchema.safeParse(result.structuredContent);
+  const parsed = workspaceLibrarySchema.safeParse(result.structuredContent);
 
   if (!parsed.success) {
     throw new Error("The server returned an invalid diagram library.");

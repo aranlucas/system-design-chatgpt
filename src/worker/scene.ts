@@ -1,3 +1,4 @@
+import { newId } from "../shared/id.ts";
 import { requiredValue } from "../shared/required-value.ts";
 import {
   elementAttribute,
@@ -279,18 +280,6 @@ type AddFrameOp = Extract<Op, { op: "add_frame" }>;
 type AddNoteOp = Extract<Op, { op: "add_note" }>;
 
 const rnd = () => Math.floor(Math.random() * 2 ** 31);
-
-const ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-";
-
-export function newId(): string {
-  let s = "";
-
-  for (let i = 0; i < 21; i++) {
-    s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
-  }
-
-  return s;
-}
 
 const NOTE_WRAP = 64; // chars per line for plain-text notes
 

@@ -46,7 +46,6 @@ const RETRY_BASE_MS = 500;
 
 const MAX_BODY_BYTES = 256 * 1024;
 
-/** One event type, as `events/list` describes it. */
 interface EventType {
   name: string;
   description: string;
@@ -98,7 +97,6 @@ type DeliveryBody =
       cursor: null;
     };
 
-/** Row shape read back from D1. */
 type SubscriptionRow = {
   id: string;
   user_id: string;
@@ -115,7 +113,6 @@ type SubscriptionRow = {
   expires_at: number;
 };
 
-/** A `post` outcome: the status we got, and the body when we asked for it. */
 type PostResult = { status: number; body: string } | null;
 
 /** What a callback must return to prove it wants deliveries. */
@@ -209,7 +206,6 @@ export function resetVerificationCache(): void {
   verified.clear();
 }
 
-/** Register events/list, events/subscribe and events/unsubscribe on one server. */
 export function registerEvents(server: McpServer, env: Env, principal: McpPrincipal): void {
   const low = server.server;
   low.setRequestHandler(

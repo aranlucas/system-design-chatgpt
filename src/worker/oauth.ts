@@ -1,3 +1,4 @@
+import { exchangeGithubCode, githubAuthorizationUrl, githubSubject } from "./github-auth.ts";
 import { z } from "zod";
 // OAuth 2.1 authorization for the MCP endpoint.
 //
@@ -41,23 +42,6 @@ const SCOPE_BLURB = {
 };
 
 const scopeDescriptions = new Map(Object.entries(SCOPE_BLURB));
-
-const GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize";
-
-const GITHUB_TOKEN = "https://github.com/login/oauth/access_token";
-
-const GITHUB_USER = "https://api.github.com/user";
-
-/** The subset of the GitHub user API this deployment reads. */
-type GithubUser = { id: number };
-
-/** What the GitHub token exchange returns. */
-const githubTokenSchema = z.object({
-  access_token: z.string().optional(),
-  error: z.string().optional(),
-});
-
-const githubUserSchema = z.object({ id: z.number().refine(Number.isSafeInteger).positive() });
 
 /** State carried through the GitHub round trip; the verifier is never sent to GitHub. */
 type UpstreamState = { verifier: string };
@@ -237,15 +221,7 @@ async function decide(
     headers: approved.headers,
   });
 
-  const { clientId } = githubConfig(env);
-  const url = new URL(GITHUB_AUTHORIZE);
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", `${origin}${CALLBACK_PATH}`);
-  // Public profile identity is enough; no email or private-profile access is needed.
-  url.searchParams.set("scope", "");
-  url.searchParams.set("state", state);
-  url.searchParams.set("code_challenge", await s256(verifier));
-  url.searchParams.set("code_challenge_method", "S256");
+  const url = await githubAuthorizationUrl(env, { origin, state, verifier });
   headers.set("Location", url.href);
 
   return new Response(null, { status: 302, headers });
@@ -276,32 +252,16 @@ async function callback(
     return renderMessage(400, "GitHub did not return an authorization code.");
   }
 
-  const { clientId, clientSecret } = githubConfig(env);
+  const exchanged = await exchangeGithubCode(env, { origin, code, verifier: data.verifier });
 
-  const res = await fetch(GITHUB_TOKEN, {
-    redirect: "manual",
-    signal: AbortSignal.timeout(10_000),
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: `${origin}${CALLBACK_PATH}`,
-      code_verifier: data.verifier,
-    }),
-  });
-
-  const exchanged = githubTokenSchema.parse(await res.json());
-
-  if (!res.ok || !exchanged.access_token) {
+  if (!exchanged.ok || !exchanged.access_token) {
     return renderMessage(
       502,
-      `GitHub rejected the code exchange (${exchanged.error ?? res.status}).`,
+      `GitHub rejected the code exchange (${exchanged.error ?? exchanged.status}).`,
     );
   }
 
-  const user = await fetchGithubUser(exchanged.access_token);
+  const user = await githubSubject(exchanged.access_token);
 
   if (!user) {
     return renderMessage(502, "Could not read your GitHub profile.");
@@ -311,8 +271,7 @@ async function callback(
 
   const { redirectTo } = await oauth.completeAuthorization({
     request: authRequest,
-    // Namespaced so a GitHub id can never collide with another provider's subject.
-    userId: encodeURIComponent(`github:${user.id}`),
+    userId: user,
     metadata: { authorizationId },
     scope: authRequest.scope,
     props: { authorizationId },
@@ -321,45 +280,6 @@ async function callback(
   headers.set("Location", redirectTo);
 
   return new Response(null, { status: 302, headers });
-}
-
-function githubConfig(env: Env) {
-  const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = env;
-
-  if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
-    throw new Error("GitHub sign-in is not configured");
-  }
-
-  return { clientId: GITHUB_CLIENT_ID, clientSecret: GITHUB_CLIENT_SECRET };
-}
-
-async function fetchGithubUser(accessToken: string): Promise<GithubUser | null> {
-  const res = await fetch(GITHUB_USER, {
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      accept: "application/vnd.github+json",
-      "user-agent": "system-design-chatgpt",
-    },
-    redirect: "manual",
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!res.ok) {
-    return null;
-  }
-
-  const user = githubUserSchema.safeParse(await res.json());
-
-  return user.success ? user.data : null;
-}
-
-async function s256(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-
-  return btoa(String.fromCodePoint(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
 }
 
 function notConfigured(origin: string): Response {

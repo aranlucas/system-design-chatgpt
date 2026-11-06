@@ -1,3 +1,4 @@
+import { workspaceLibrarySchema } from "../shared/workspace-library.ts";
 import { requiredValue } from "../shared/required-value.ts";
 import { storedElementsSchema } from "../shared/schemas.ts";
 
@@ -425,13 +426,6 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
     }),
   );
 
-  const librarySchema = z.object({
-    diagrams: z.array(z.object({ name: z.string(), diagram: z.string() })),
-    nextCursor: z.string().nullable(),
-    activeDiagram: z.string().optional(),
-    activeName: z.string().optional(),
-  });
-
   async function library(cursor?: string) {
     const boundary = cursor ? parseDiagramCursor(cursor) : undefined;
 
@@ -457,7 +451,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
       description: "Open the system design workspace and choose one of your diagrams.",
       icons: [{ src: `${origin}/icons/system-design-128.png`, mimeType: "image/png" }],
       inputSchema: z.object({ diagram: diagramArg.optional(), cursor: z.string().optional() }),
-      outputSchema: librarySchema,
+      outputSchema: workspaceLibrarySchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
         ui: { resourceUri: WORKSPACE_URI, visibility: ["app"] },
@@ -477,7 +471,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
         activeDiagram = shareLink(origin, parsed.id, parsed.key);
       }
 
-      const structuredContent: z.output<typeof librarySchema> = await library(cursor);
+      const structuredContent: z.output<typeof workspaceLibrarySchema> = await library(cursor);
 
       if (activeDiagram) {
         structuredContent.activeDiagram = activeDiagram;
@@ -495,7 +489,7 @@ export function buildServer(env: Env, ctx: McpRequestContext, principal: McpPrin
     {
       description: "List the signed-in user's diagrams for the workspace chooser.",
       inputSchema: z.object({ cursor: z.string().optional() }),
-      outputSchema: librarySchema,
+      outputSchema: workspaceLibrarySchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { resourceUri: WORKSPACE_URI, visibility: ["app"] } },
     },
