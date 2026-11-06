@@ -10,3 +10,6 @@ public/mcp-workspace.html
 
 # TypeScript project-reference build cache
 *.tsbuildinfo
+
+# e2e reports and browser artifacts
+.e2e/

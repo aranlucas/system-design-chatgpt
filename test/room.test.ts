@@ -73,6 +73,37 @@ async function roomWithDelete() {
 }
 
 describe("DiagramRoom ops layer", () => {
+  // One frame can contain repeated IDs. The documented version/nonce rule must
+  // choose one winner, rather than letting array order overwrite a newer edit.
+  it.each([
+    { version: 3, versionNonce: 8 },
+    { version: 2, versionNonce: 1 },
+  ])(
+    "merges duplicate IDs once using the winning revision $version/$versionNonce",
+    async (winner) => {
+      const { env } = makeEnv();
+      const ctx = makeRoomCtx();
+      const room = new DiagramRoom(ctx.ctx, env);
+      await room.init("duplicates", "Duplicates");
+      const peer = makeWs();
+      ctx.addWs(peer);
+      const best = { ...rect("same", 300, 20), ...winner };
+      const stale = { ...rect("same", 100, 20), version: 2, versionNonce: 9 };
+      await room.webSocketMessage(
+        makeWs(),
+        JSON.stringify({ type: "update", elements: [best, stale] }),
+      );
+      expect(await room.getRaw()).toEqual([best]);
+      expect(JSON.parse(requiredTestValue(ctx.sql.elements.get("same")))).toEqual(best);
+
+      const updates = peer.sent
+        .map((data) => serverMessageSchema.parse(JSON.parse(data)))
+        .filter((message) => message.type === "update");
+
+      expect(updates).toEqual([{ type: "update", elements: [best], origin: "human" }]);
+    },
+  );
+
   it("deactivation closes active tabs, rejects reconnects and ignores late edits", async () => {
     const { env } = makeEnv();
     const ctx = makeRoomCtx();

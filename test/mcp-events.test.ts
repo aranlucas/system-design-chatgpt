@@ -21,7 +21,7 @@ import type { El } from "@/shared/protocol.ts";
 import { deliverDiagramEvent, resetVerificationCache } from "@/worker/events.ts";
 import { handleMcp } from "@/worker/mcp.ts";
 import { DiagramRoom } from "@/worker/room.ts";
-import { createDiagram, shareLink } from "@/worker/store.ts";
+import { createDiagram, listDiagrams, shareLink } from "@/worker/store.ts";
 import { VIEW_URI, WORKSPACE_URI } from "@/worker/view.ts";
 import {
   makeEnv,
@@ -901,6 +901,38 @@ describe("subscription validation and isolation", () => {
 });
 
 describe("webhook delivery lifecycle", () => {
+  // Listing creates a second valid capability, distinct from the original link.
+  // It must authorize events for exactly as long as that capability remains valid.
+  it("delivers through library capabilities and stops when that key is revoked", async () => {
+    const d = await createDiagram(env.env, "Library board", undefined, "github%3A1");
+    const page = await listDiagrams(env.env, 50, undefined, "github%3A1");
+    const entry = requiredTestValue(page.items.find((item) => item.id === d.id));
+    expect(entry.key).not.toBe(d.key);
+
+    const grant = await rpcGrant(
+      "events/subscribe",
+      subscribeParams(shareLink("https://design.example", d.id, entry.key), {
+        name: "diagram.renamed",
+      }),
+    );
+
+    expect(grant.error).toBeUndefined();
+    expect(grant.result).toBeDefined();
+    await deliverDiagramEvent(env.env, d.id, "diagram.renamed", {
+      diagram_id: d.id,
+      name: "Renamed",
+    });
+    expect(receiver.events()).toHaveLength(1);
+    expect(receiver.events()[0].body.data).toMatchObject({ diagram_id: d.id, name: "Renamed" });
+    env.db.library.delete(d.id);
+    await deliverDiagramEvent(env.env, d.id, "diagram.renamed", {
+      diagram_id: d.id,
+      name: "Revoked",
+    });
+    expect(receiver.events()).toHaveLength(1);
+    expect(env.db.event_subscriptions.size).toBe(0);
+  });
+
   it("generates verifiable signatures covering the exact payload", async () => {
     const { room, ctx } = await watched("diagram.renamed");
     await room.rename("Unicode: café 🌳");
