@@ -8,11 +8,13 @@ describe("shared GitHub authentication", () => {
   it("uses the RFC 7636 S256 example for both sign-in flows", async () => {
     const { env } = makeEnv();
     env.GITHUB_CLIENT_ID = "client";
+
     const url = await githubAuthorizationUrl(env, {
       origin: "https://design.example",
       state: "consent-state",
       verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
     });
+
     expect(url.searchParams.get("code_challenge")).toBe(
       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
     );
@@ -25,6 +27,7 @@ describe("shared GitHub authentication", () => {
       .fn()
       .mockResolvedValueOnce(Response.json({ id: 123 }))
       .mockResolvedValueOnce(Response.json({ id: "123" }));
+
     vi.stubGlobal("fetch", fetch);
     expect(await githubSubject("token")).toBe("github%3A123");
     expect(await githubSubject("token")).toBeNull();

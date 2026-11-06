@@ -63,3 +63,8 @@ Baseline main CI succeeded at b6338a6 (run 41702079307). Local diff whitespace c
 and formatting completed; no local tests/builds/typecheck were run. PR CI is the
 behavioral validation gate. The standalone formatter used the installed preset's
 published options because this clean worktree has no node_modules.
+
+First PR CI run 42279763832 passed behavioral tests, typecheck and build. Lint
+identified newly introduced blank-line violations and an unknown-returning JSON
+helper. Fixed spacing and made the bounded helper return text, with each caller
+parsing directly into its token or identity schema. No baseline failure was found.

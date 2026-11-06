@@ -79,6 +79,7 @@ export async function browserLogin(request: Request, env: Env): Promise<Response
   await env.OAUTH_KV.put(`browser-login:${await sha256(binding)}`, JSON.stringify(login), {
     expirationTtl: LOGIN_SECONDS,
   });
+
   const url = await githubAuthorizationUrl(env, {
     origin: new URL(request.url).origin,
     state,

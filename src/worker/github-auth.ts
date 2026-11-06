@@ -10,16 +10,18 @@ const tokenSchema = z.object({ access_token: z.string().optional(), error: z.str
 
 const identitySchema = z.object({ id: z.number().refine(Number.isSafeInteger).positive() });
 
-async function responseJson(response: Response): Promise<unknown> {
-  return JSON.parse(new TextDecoder().decode(await readBounded(response.body, 16 * 1024)));
+async function responseText(response: Response): Promise<string> {
+  return new TextDecoder().decode(await readBounded(response.body, 16 * 1024));
 }
 
 export async function githubAuthorizationUrl(env: Env, auth: GithubAuthorization): Promise<URL> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(auth.verifier));
+
   const challenge = btoa(String.fromCodePoint(...new Uint8Array(digest)))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
+
   const url = new URL("https://github.com/login/oauth/authorize");
   url.search = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
@@ -48,7 +50,8 @@ export async function exchangeGithubCode(env: Env, exchange: GithubExchange) {
       code_verifier: exchange.verifier,
     }),
   });
-  const token = tokenSchema.parse(await responseJson(response));
+
+  const token = tokenSchema.parse(JSON.parse(await responseText(response)));
 
   return { ...token, ok: response.ok, status: response.status };
 }
@@ -70,7 +73,7 @@ export async function githubSubject(accessToken: string): Promise<string | null>
     return null;
   }
 
-  const identity = identitySchema.safeParse(await responseJson(response));
+  const identity = identitySchema.safeParse(JSON.parse(await responseText(response)));
 
   // Browser sessions and MCP grants must use the same ownership namespace.
   return identity.success ? encodeURIComponent(`github:${identity.data.id}`) : null;
