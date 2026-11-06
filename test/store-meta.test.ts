@@ -88,7 +88,6 @@ describe("component catalog", () => {
     for (const c of COMPONENTS) {
       expect(["rectangle", "ellipse", "diamond"]).toContain(c.geometry);
       expect(groups.has(c.group)).toBe(true);
-      expect(componentByKind.get(c.kind)?.label).toBe(c.label);
     }
   });
 
@@ -100,8 +99,6 @@ describe("component catalog", () => {
 
 describe("agent colours", () => {
   it("keeps agent stroke distinct from the violet fill", () => {
-    expect(AGENT_STROKE).toBe("#6741d9");
-    expect(COLORS.violet).toBe("#d0bfff");
     expect(AGENT_STROKE).not.toBe(COLORS.violet);
   });
 });

@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { exchangeGithubCode, githubAuthorizationUrl, githubSubject } from "./github-auth.ts";
 import { HTTPException } from "hono/http-exception";
 import { sha256 } from "./store.ts";
-import { readBounded, takeBudget } from "./request-limits.ts";
+import { takeBudget } from "./request-limits.ts";
 
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 
@@ -10,10 +10,6 @@ const LOGIN_SECONDS = 600;
 type BrowserSession = { userId: string; expiresAt: number };
 
 type LoginState = { state: string; verifier: string; expiresAt: number };
-
-const githubIdentitySchema = z.object({ id: z.number().refine(Number.isSafeInteger).positive() });
-
-const githubTokenSchema = z.object({ access_token: z.string().optional() });
 
 function cookieName(request: Request, suffix: string) {
   return `${new URL(request.url).protocol === "https:" ? "__Host-" : ""}sdc-${suffix}`;
@@ -83,21 +79,11 @@ export async function browserLogin(request: Request, env: Env): Promise<Response
   await env.OAUTH_KV.put(`browser-login:${await sha256(binding)}`, JSON.stringify(login), {
     expirationTtl: LOGIN_SECONDS,
   });
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-
-  const challenge = btoa(String.fromCodePoint(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-
-  const url = new URL("https://github.com/login/oauth/authorize");
-  url.search = new URLSearchParams({
-    client_id: env.GITHUB_CLIENT_ID,
-    redirect_uri: `${new URL(request.url).origin}/github/callback`,
+  const url = await githubAuthorizationUrl(env, {
+    origin: new URL(request.url).origin,
     state,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-  }).toString();
+    verifier,
+  });
 
   return new Response(null, {
     status: 302,
@@ -145,50 +131,26 @@ export async function browserCallback(request: Request, env: Env): Promise<Respo
     throw new HTTPException(400, { message: "GitHub did not return an authorization code." });
   }
 
-  const exchanged = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    redirect: "manual",
-    signal: AbortSignal.timeout(10_000),
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      client_id: env.GITHUB_CLIENT_ID,
-      client_secret: env.GITHUB_CLIENT_SECRET,
-      code,
-      redirect_uri: `${url.origin}/github/callback`,
-      code_verifier: login.verifier,
-    }),
+  const token = await exchangeGithubCode(env, {
+    origin: url.origin,
+    code,
+    verifier: login.verifier,
   });
 
-  const token = githubTokenSchema.parse(
-    JSON.parse(new TextDecoder().decode(await readBounded(exchanged.body, 16 * 1024))),
-  );
-
-  if (!exchanged.ok || !token.access_token) {
+  if (!token.ok || !token.access_token) {
     throw new HTTPException(502, { message: "GitHub sign-in failed." });
   }
 
-  const identityResponse = await fetch("https://api.github.com/user", {
-    redirect: "manual",
-    signal: AbortSignal.timeout(10_000),
-    headers: {
-      Authorization: `Bearer ${token.access_token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "system-design-chatgpt",
-    },
-  });
+  const userId = await githubSubject(token.access_token);
 
-  const identity = githubIdentitySchema.safeParse(
-    JSON.parse(new TextDecoder().decode(await readBounded(identityResponse.body, 16 * 1024))),
-  );
-
-  if (!identityResponse.ok || !identity.success) {
+  if (!userId) {
     throw new HTTPException(502, { message: "Could not read your GitHub identity." });
   }
 
   const sessionToken = crypto.randomUUID();
 
   const session: BrowserSession = {
-    userId: encodeURIComponent(`github:${identity.data.id}`),
+    userId,
     expiresAt: Date.now() + SESSION_SECONDS * 1000,
   };
 
