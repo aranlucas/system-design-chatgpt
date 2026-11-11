@@ -37,6 +37,11 @@ tabs reconcile them with Excalidraw. Deletions travel as tombstones. Expired tom
 are collected only with no connected tabs; a tab offline beyond the retention window
 can miss a deletion. Presence lives on WebSocket attachments to survive hibernation.
 
+Tabs flush local changes at most every 60 ms while drawing. The room rate-limits
+canvas updates in memory, per tab and per board, with headroom above that cadence;
+there is one room per board, so the count is exact and adds no D1 call to an edit.
+Exceeding it closes the tab with 1013; the tab reconnects and re-syncs from `init`.
+
 Agent operations work on cloned elements and commit before broadcasting. Batches
 return per-operation results and may partially succeed; callers must inspect those
 results. An automatic snapshot precedes agent patches, Mermaid imports and explicit
