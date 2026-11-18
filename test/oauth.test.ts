@@ -14,6 +14,8 @@ const ORIGIN = "https://design.example";
 
 const RESOURCE = `${ORIGIN}/mcp`;
 
+const METADATA = `${ORIGIN}/.well-known/oauth-protected-resource/mcp`;
+
 const REDIRECT = "https://client.example/callback";
 
 const VERSION = "2026-07-28";
@@ -80,6 +82,7 @@ afterEach(() => {
   try {
     expectGithubRequestPolicy();
   } finally {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   }
 });
@@ -142,7 +145,7 @@ async function consent(scope = "mcp:read mcp:write") {
   return { clientId, verifier, handle, cookie: cookies(page), html };
 }
 
-async function authorize(scope = "mcp:read mcp:write"): Promise<Authorization> {
+async function githubCallback(scope = "mcp:read mcp:write") {
   const started = await consent(scope);
   const form = new URLSearchParams({ handle: started.handle, decision: "allow" });
 
@@ -167,13 +170,19 @@ async function authorize(scope = "mcp:read mcp:write"): Promise<Authorization> {
     { headers: { cookie: cookies(approved) } },
   );
 
+  return { clientId: started.clientId, verifier: started.verifier, callback };
+}
+
+async function authorize(scope?: string): Promise<Authorization> {
+  const authorization = await githubCallback(scope);
+  const { callback } = authorization;
   expect(callback.status).toBe(302);
   const redirected = new URL(requiredTestValue(callback.headers.get("location")));
   expect(redirected.origin + redirected.pathname).toBe(REDIRECT);
   expect(redirected.searchParams.get("state")).toBe("client-state");
   expect(redirected.searchParams.get("code")).toBeTruthy();
 
-  return { clientId: started.clientId, verifier: started.verifier, callback };
+  return authorization;
 }
 
 function exchange(authorization: Authorization, overrides: Record<string, string> = {}) {
@@ -249,6 +258,50 @@ async function rpcBody(response: Response): Promise<RpcResult> {
 }
 
 describe("OAuth authorization", () => {
+  it("advertises discovery without an error for missing credentials", async () => {
+    const response = await call("/mcp");
+    expect(response.status).toBe(401);
+    const challenge = requiredTestValue(response.headers.get("www-authenticate"));
+    expect(challenge).toContain(`resource_metadata="${METADATA}"`);
+    expect(challenge).toContain('scope="mcp:read"');
+    expect(challenge).not.toContain("error=");
+
+    const metadata = await call(METADATA);
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({
+      resource: RESOURCE,
+      authorization_servers: [ORIGIN],
+      bearer_methods_supported: ["header"],
+      scopes_supported: ["mcp:read"],
+    });
+
+    const issuer = await call("/.well-known/oauth-authorization-server");
+    expect(issuer.status).toBe(200);
+    const issuerMetadata = jsonObjectSchema.parse(await issuer.json());
+    expect(issuerMetadata).toMatchObject({
+      issuer: ORIGIN,
+      authorization_endpoint: `${ORIGIN}/authorize`,
+      token_endpoint: `${ORIGIN}/oauth/token`,
+      registration_endpoint: `${ORIGIN}/oauth/register`,
+      revocation_endpoint: `${ORIGIN}/oauth/token`,
+      scopes_supported: ["mcp:read", "mcp:write"],
+      code_challenge_methods_supported: ["S256"],
+      client_id_metadata_document_supported: true,
+    });
+    expect(issuerMetadata.grant_types_supported).toContain("authorization_code");
+    expect(issuerMetadata.grant_types_supported).toContain("refresh_token");
+  });
+
+  it("challenges rejected bearer tokens without contacting GitHub", async () => {
+    const response = await rpc("invalid-token", "events/list");
+    expect(response.status).toBe(401);
+    const challenge = response.headers.get("www-authenticate");
+    expect(challenge).toContain('error="invalid_token"');
+    expect(challenge).toContain(`resource_metadata="${METADATA}"`);
+    expect(challenge).toContain('scope="mcp:read"');
+    expect(github).not.toHaveBeenCalled();
+  });
+
   it("completes consent, GitHub PKCE, token exchange and authenticated event discovery", async () => {
     const { tokens: issued } = await tokens();
 
@@ -329,7 +382,10 @@ describe("OAuth authorization", () => {
     const { tokens: issued } = await tokens("mcp:write");
     const response = await rpc(issued.access_token, "events/list");
     expect(response.status).toBe(403);
-    expect(response.headers.get("www-authenticate")).toContain('scope="mcp:read"');
+    const challenge = response.headers.get("www-authenticate");
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="mcp:read"');
+    expect(challenge).toContain(`resource_metadata="${METADATA}"`);
   });
   it("permits reads and challenges writes before a read-only token mutates anything", async () => {
     const { tokens: issued } = await tokens("mcp:read");
@@ -341,7 +397,10 @@ describe("OAuth authorization", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(response.headers.get("www-authenticate")).toContain("mcp:write");
+    const challenge = response.headers.get("www-authenticate");
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="mcp:read mcp:write"');
+    expect(challenge).toContain(`resource_metadata="${METADATA}"`);
     expect(env.db.diagrams.size).toBe(0);
   });
   it("rejects an incorrect PKCE verifier and never redeems an authorization code twice", async () => {
@@ -358,8 +417,19 @@ describe("OAuth authorization", () => {
     const bad = await exchange(auth, { resource: "https://other.example/mcp" });
     expect(bad.status).toBe(400);
   });
-  it("refreshes tokens and revokes the installation through the advertised endpoint", async () => {
+  it("challenges expired tokens, then allows refresh and revocation", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { auth, tokens: issued } = await tokens();
+    expect((await rpc(issued.access_token, "events/list")).status).toBe(200);
+    const lifetime = z.number().positive().parse(issued.expires_in);
+    vi.setSystemTime(Date.now() + (lifetime + 1) * 1000);
+
+    const expired = await rpc(issued.access_token, "events/list");
+    expect(expired.status).toBe(401);
+    const challenge = expired.headers.get("www-authenticate");
+    expect(challenge).toContain('error="invalid_token"');
+    expect(challenge).toContain(`resource_metadata="${METADATA}"`);
+    expect(challenge).toContain('scope="mcp:read"');
 
     const refreshed = await call("/oauth/token", {
       method: "POST",
@@ -385,7 +455,30 @@ describe("OAuth authorization", () => {
     });
 
     expect(revoked.status).toBe(200);
-    expect((await rpc(replacement.access_token, "events/list")).status).toBe(401);
+    const rejected = await rpc(replacement.access_token, "events/list");
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    expect(github).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a GitHub code exchange failure on the interactive callback", async () => {
+    github.mockResolvedValueOnce(Response.json({ error: "bad_verification_code" }));
+    const { callback } = await githubCallback();
+    expect(callback.status).toBe(502);
+    expect(await callback.text()).toContain("GitHub rejected the code exchange");
+    expect(callback.headers.get("location")).toBeNull();
+    expect(callback.headers.get("www-authenticate")).toBeNull();
+    expect(github).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a GitHub profile failure on the interactive callback", async () => {
+    github.mockResolvedValueOnce(Response.json({ access_token: "upstream-github-token" }));
+    github.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const { callback } = await githubCallback();
+    expect(callback.status).toBe(502);
+    expect(await callback.text()).toContain("Could not read your GitHub profile");
+    expect(callback.headers.get("location")).toBeNull();
+    expect(callback.headers.get("www-authenticate")).toBeNull();
   });
   it("rejects a consent POST without its browser binding cookie", async () => {
     const started = await consent();
